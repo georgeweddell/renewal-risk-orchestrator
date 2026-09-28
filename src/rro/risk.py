@@ -15,6 +15,8 @@ import yaml
 from pydantic import BaseModel, Field
 
 Band = Literal["healthy", "at-risk", "critical"]
+# Stable codes for the factors, used to match an account against past decisions in memory.
+Driver = Literal["usage_drop", "open_p1", "open_p2", "renewal_soon"]
 
 
 class UsageRule(BaseModel):
@@ -59,6 +61,7 @@ class RiskSignals(BaseModel):
 
 
 class Factor(BaseModel):
+    code: Driver
     name: str
     evidence: str
     points: int
@@ -69,6 +72,7 @@ class RiskAssessment(BaseModel):
     score: int
     band: Band
     factors: list[Factor]
+    drivers: list[Driver] = Field(description="Codes of the factors that scored points")
     signals: RiskSignals
 
 
@@ -82,6 +86,7 @@ def score(signals: RiskSignals, config: RiskConfig) -> RiskAssessment:
     usage_rule = next((r for r in config.usage_change if signals.usage_pct_change <= r.max_pct), None)
     factors.append(
         Factor(
+            code="usage_drop",
             name="Usage trend",
             evidence=f"{signals.usage_pct_change:+.1f}% weekly active users (last 4 wks vs prior 8)",
             points=usage_rule.points if usage_rule else 0,
@@ -89,13 +94,14 @@ def score(signals: RiskSignals, config: RiskConfig) -> RiskAssessment:
         )
     )
 
-    for label, count, rule in (
-        ("Open P1 issues", signals.open_p1, config.open_p1),
-        ("Open P2 issues", signals.open_p2, config.open_p2),
+    for code, label, count, rule in (
+        ("open_p1", "Open P1 issues", signals.open_p1, config.open_p1),
+        ("open_p2", "Open P2 issues", signals.open_p2, config.open_p2),
     ):
         points = min(count * rule.points_each, rule.cap)
         factors.append(
             Factor(
+                code=code,
                 name=label,
                 evidence=f"{count} open",
                 points=points,
@@ -107,6 +113,7 @@ def score(signals: RiskSignals, config: RiskConfig) -> RiskAssessment:
     days_rule = next((r for r in config.days_to_renewal if days <= r.max_days), None)
     factors.append(
         Factor(
+            code="renewal_soon",
             name="Time to renewal",
             evidence=f"{days} days" if days >= 0 else f"renewal date passed {-days} days ago",
             points=days_rule.points if days_rule else 0,
@@ -116,4 +123,5 @@ def score(signals: RiskSignals, config: RiskConfig) -> RiskAssessment:
 
     total = min(sum(f.points for f in factors), 100)
     band = next(b.band for b in config.bands if total >= b.min_score)
-    return RiskAssessment(score=total, band=band, factors=factors, signals=signals)
+    drivers = [f.code for f in factors if f.points > 0]
+    return RiskAssessment(score=total, band=band, factors=factors, drivers=drivers, signals=signals)

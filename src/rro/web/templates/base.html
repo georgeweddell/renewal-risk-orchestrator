@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Renewal Risk Orchestrator{% endblock %}</title>
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
+  <style>
+    :root {
+      --bg: #f7f7f5; --surface: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --border: #e3e2dc;
+      --accent: #2f5bd3; --ok: #1f7a4d; --warn: #a86a00; --bad: #b3261e;
+      --ok-bg: #e6f4ec; --warn-bg: #fdf1dc; --bad-bg: #fbe7e5; --accent-bg: #e8eefc;
+      --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #161615; --surface: #1f1f1d; --text: #ecebe6; --muted: #9c9b94; --border: #34332f;
+        --accent: #7ea2ff; --ok: #6fcf97; --warn: #f2c14e; --bad: #ff8a80;
+        --ok-bg: #1c3326; --warn-bg: #3a2e12; --bad-bg: #3d1f1c; --accent-bg: #1f2a47;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    header { background: var(--surface); border-bottom: 1px solid var(--border); }
+    .bar { max-width: 1200px; margin: 0 auto; padding: 12px 20px; display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
+    .brand { font-weight: 650; color: var(--text); }
+    nav { display: flex; gap: 18px; }
+    nav a { color: var(--muted); }
+    nav a.active { color: var(--text); font-weight: 600; }
+    .meta { margin-left: auto; color: var(--muted); font-size: 13px; }
+    main { max-width: 1200px; margin: 0 auto; padding: 24px 20px 64px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    h2 { font-size: 16px; margin: 28px 0 10px; }
+    .sub { color: var(--muted); margin: 0 0 20px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+    table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+    tr:last-child td { border-bottom: 0; }
+    .num { font-variant-numeric: tabular-nums; }
+    .muted { color: var(--muted); }
+    .small { font-size: 13px; }
+    .mono { font-family: var(--mono); font-size: 12.5px; }
+    .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+    .b-healthy, .b-executed, .b-completed, .b-allowed { background: var(--ok-bg); color: var(--ok); }
+    .b-at-risk, .b-pending, .b-awaiting_approval, .b-running { background: var(--warn-bg); color: var(--warn); }
+    .b-critical, .b-rejected, .b-failed, .b-denied { background: var(--bad-bg); color: var(--bad); }
+    .b-approved, .b-neutral { background: var(--accent-bg); color: var(--accent); }
+    button, .btn { font: inherit; border: 1px solid var(--border); background: var(--surface); color: var(--text); padding: 6px 14px; border-radius: 8px; cursor: pointer; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.danger { color: var(--bad); }
+    input[type=text], textarea { font: inherit; width: 100%; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
+    textarea { min-height: 60px; resize: vertical; }
+    .row { display: flex; gap: 10px; align-items: center; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 24px; align-items: start; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+    .briefing h1 { font-size: 21px; } .briefing h2 { font-size: 16px; border-top: 1px solid var(--border); padding-top: 14px; }
+    .briefing table { font-size: 14px; }
+    .trace { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+    .trace li { padding: 6px 0; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: baseline; }
+    .trace li:last-child { border-bottom: 0; }
+    .approval { margin-bottom: 14px; }
+    .approval .head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+    details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+    pre { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; overflow-x: auto; }
+    .error { background: var(--bad-bg); color: var(--bad); border-radius: 8px; padding: 10px 14px; }
+    .spinner { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--warn); animation: pulse 1s infinite alternate; }
+    @keyframes pulse { from { opacity: .3; } to { opacity: 1; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <a class="brand" href="/">Renewal Risk Orchestrator</a>
+      <nav>
+        {% set path = request.url.path %}
+        <a href="/" class="{{ 'active' if path == '/' or path.startswith('/runs') }}">Accounts</a>
+        <a href="/approvals" class="{{ 'active' if path.startswith('/approvals') }}">Approvals{% if pending_count %} <span class="badge b-pending">{{ pending_count }}</span>{% endif %}</a>
+        <a href="/memory" class="{{ 'active' if path.startswith('/memory') }}">Memory</a>
+        <a href="/audit" class="{{ 'active' if path.startswith('/audit') }}">Audit log</a>
+      </nav>
+      <span class="meta">{{ model }}</span>
+    </div>
+  </header>
+  <main>{% block content %}{% endblock %}</main>
+</body>
+</html>

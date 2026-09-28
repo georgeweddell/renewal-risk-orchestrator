@@ -1,0 +1,56 @@
+{% set running = run.status == 'running' %}
+<div id="panel" {% if running %}hx-get="/runs/{{ run.id }}/panel" hx-trigger="every 1500ms" hx-swap="outerHTML"{% endif %}>
+  <div class="row" style="margin-bottom: 18px; flex-wrap: wrap">
+    {% if running %}<span class="spinner"></span>{% endif %}
+    <span class="badge b-{{ run.status }}">{{ run.status.replace('_', ' ') }}</span>
+    {% if run.risk_band %}<span class="badge b-{{ run.risk_band }}">{{ run.risk_band }} · {{ run.risk_score }}/100</span>{% endif %}
+    {% if usage %}
+      {% set total_in = usage.get('input_tokens', 0) + usage.get('cache_read_input_tokens', 0) + usage.get('cache_creation_input_tokens', 0) %}
+      <span class="muted small">{{ run.model }} · {{ "{:,}".format(total_in) }} input / {{ "{:,}".format(usage.get('output_tokens', 0)) }} output tokens</span>
+    {% endif %}
+  </div>
+
+  {% if run.error %}<p class="error">{{ run.error }}</p>{% endif %}
+
+  <div class="grid">
+    <section>
+      {% if briefing_html %}
+        <div class="card briefing">{{ briefing_html | safe }}</div>
+      {% elif running %}
+        <div class="card muted">The agent is working. Every tool call appears in the trace as it happens; the briefing shows here when it's written.</div>
+      {% else %}
+        <div class="card muted">No briefing was written.</div>
+      {% endif %}
+    </section>
+
+    <aside>
+      {% if approvals %}
+        <h2 style="margin-top: 0">Proposed changes</h2>
+        {% for a in approvals %}
+          {% set next_url = "/runs/" ~ run.id %}
+          {% include "_approval_card.html" %}
+        {% endfor %}
+      {% endif %}
+
+      <h2 {% if not approvals %}style="margin-top: 0"{% endif %}>Trace <span class="muted small">(from the audit log)</span></h2>
+      <div class="card">
+        {% if trace %}
+        <ul class="trace">
+          {% for row in trace %}
+            <li>
+              <span class="muted num">{{ row.ts[11:19] }}</span>
+              <span>
+                <span class="mono">{{ row.system }}.{{ row.tool }}</span>
+                {% if row.decision == 'denied' %}<span class="badge b-denied">denied</span>
+                {% elif row.is_error %}<span class="badge b-pending">error</span>{% endif %}
+                {% if row.actor != 'agent' %}<span class="badge b-neutral">{{ row.actor }}</span>{% endif %}
+                {% if row.scope == 'write' %}<span class="badge b-approved">write</span>{% endif %}
+              </span>
+            </li>
+          {% endfor %}
+        </ul>
+        {% else %}<span class="muted small">Starting…</span>{% endif %}
+      </div>
+    </aside>
+  </div>
+</div>

@@ -16,6 +16,7 @@ import yaml
 from pydantic import BaseModel
 
 from mcp_servers import mockdata
+from mcp_servers.memory.store import Decision, MemoryStore
 
 USAGE_WEEKS = 12
 RECENT_WEEKS = 4
@@ -64,6 +65,37 @@ class AccountSeed(BaseModel):
 class SeedData(BaseModel):
     owners: list[Owner]
     accounts: list[AccountSeed]
+
+
+class DecisionSeed(BaseModel):
+    account_slug: str
+    account_name: str
+    days_ago: int
+    action_type: Literal["crm_risk_update", "pricing_exception"]
+    risk_band: Literal["healthy", "at-risk", "critical"]
+    risk_score: int
+    drivers: list[Literal["usage_drop", "open_p1", "open_p2", "renewal_soon"]]
+    proposal: str
+    status: Literal["approved", "rejected"]
+    approver: str
+    note: str | None = None
+    outcome: Literal["renewed", "churned", "downgraded", "pending"] | None = None
+    outcome_note: str | None = None
+
+
+class MemorySeed(BaseModel):
+    decisions: list[DecisionSeed]
+
+
+def seed_memory(seed_path: Path, db_path: Path, today: date | None = None) -> int:
+    """Rebuild the decision memory from seed/memory.yaml. Returns the number of decisions."""
+    today = today or datetime.now(UTC).date()
+    seed = MemorySeed.model_validate(yaml.safe_load(seed_path.read_text(encoding="utf-8")))
+    store = MemoryStore.create(db_path)
+    for d in sorted(seed.decisions, key=lambda d: -d.days_ago):
+        fields = d.model_dump(exclude={"days_ago"})
+        store.record(Decision(**fields, decided_on=(today - timedelta(days=d.days_ago)).isoformat(), source="seed"))
+    return len(seed.decisions)
 
 
 def load_seed(path: Path) -> SeedData:

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Approvals</h1>
+<p class="sub">Nothing the agent proposes is written until someone approves it here. Approved actions are run by the executor, exactly as shown.</p>
+
+{% if pending %}
+  <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; align-items: start">
+    {% for a in pending %}
+      {% set next_url = "/approvals" %}
+      <div>
+        {% include "_approval_card.html" %}
+        {% if a.run_id %}<div class="small" style="margin: -8px 0 0 4px"><a href="/runs/{{ a.run_id }}">Read the briefing →</a></div>{% endif %}
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="card muted">Nothing waiting for approval.</div>
+{% endif %}
+
+{% if decided %}
+<h2>Decided</h2>
+<table>
+  <thead><tr><th>When (UTC)</th><th>Account</th><th>Proposal</th><th>Status</th><th>By</th><th>Note</th></tr></thead>
+  <tbody>
+  {% for a in decided %}
+    <tr>
+      <td class="num">{{ (a.decided_at or a.created_at)[:16].replace('T', ' ') }}</td>
+      <td>{{ a.account_name }}</td>
+      <td>{{ a.summary }}</td>
+      <td><span class="badge b-{{ a.status }}">{{ a.status }}</span></td>
+      <td>{{ a.decided_by or '' }}</td>
+      <td class="muted small">{{ a.decision_note or '' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

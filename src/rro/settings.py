@@ -12,7 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 Backend = Literal["mock", "live"]
-SYSTEMS = ("crm", "tickets", "usage")
+SYSTEMS = ("crm", "tickets", "usage", "memory")
 
 
 class Settings(BaseSettings):
@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     tickets_backend: Backend | None = None
     usage_backend: Backend | None = None
     rro_max_agent_turns: int = 25
+    # Name recorded against approvals made from the web UI or CLI (Slack supplies real identities in Phase 4).
+    rro_approver_name: str = "Demo approver"
 
     # Locations (override for tests)
     rro_home: Path = PROJECT_ROOT
@@ -56,14 +58,23 @@ class Settings(BaseSettings):
         return self.rro_home / "seed" / "accounts.yaml"
 
     @property
+    def memory_seed_file(self) -> Path:
+        return self.rro_home / "seed" / "memory.yaml"
+
+    @property
     def rro_db(self) -> Path:
-        """Orchestrator state: runs and the audit log."""
+        """Orchestrator state: runs, approvals and the audit log."""
         return self.data_dir / "rro.db"
 
     @property
     def mock_db(self) -> Path:
         """The fake systems of record used in mock mode."""
         return self.data_dir / "mock_systems.db"
+
+    @property
+    def memory_db(self) -> Path:
+        """Past renewal decisions and their outcomes."""
+        return self.data_dir / "memory.db"
 
     @property
     def logs_dir(self) -> Path:

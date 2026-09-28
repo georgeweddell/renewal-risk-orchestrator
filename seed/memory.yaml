@@ -1,0 +1,141 @@
+# Past renewal decisions: the institutional memory the agent consults.
+# Includes former customers (not among today's 8 accounts), because precedent
+# is most useful when it comes from accounts that have already renewed or left.
+# days_ago is relative to the day you seed.
+#
+# Drivers use the risk engine's codes: usage_drop, open_p1, open_p2, renewal_soon.
+
+decisions:
+  # --- Halcyon Robotics: last year's discount didn't fix adoption ------------------
+  - account_slug: halcyon-robotics
+    account_name: Halcyon Robotics
+    days_ago: 372
+    action_type: pricing_exception
+    risk_band: at-risk
+    risk_score: 51
+    drivers: [usage_drop, renewal_soon]
+    proposal: "15% discount on the 2025 renewal"
+    status: approved
+    approver: "Sam Reyes (Deal desk)"
+    note: "Approved to secure the renewal after a Q2 usage dip. No adoption conditions attached."
+    outcome: renewed
+    outcome_note: "Renewed at 15% off, but usage started falling again within six months. The discount didn't change adoption."
+
+  - account_slug: halcyon-robotics
+    account_name: Halcyon Robotics
+    days_ago: 372
+    action_type: crm_risk_update
+    risk_band: at-risk
+    risk_score: 51
+    drivers: [usage_drop, renewal_soon]
+    proposal: "Set renewal_risk_level = at-risk on the 2025 renewal deal"
+    status: approved
+    approver: "Priya Shah (Account owner)"
+    outcome: renewed
+
+  # --- Former customers with the same profile as today's critical accounts ---------
+  - account_slug: quarry-systems
+    account_name: Quarry Systems
+    days_ago: 240
+    action_type: pricing_exception
+    risk_band: critical
+    risk_score: 85
+    drivers: [usage_drop, open_p1, renewal_soon]
+    proposal: "20% discount to offset open SSO and reporting defects"
+    status: approved
+    approver: "Sam Reyes (Deal desk)"
+    note: "Discount offered while both P1s were still open."
+    outcome: churned
+    outcome_note: "Churned four months later. The exit interview cited the unresolved SSO problems, not price."
+
+  - account_slug: larkspur-health
+    account_name: Larkspur Health
+    days_ago: 150
+    action_type: pricing_exception
+    risk_band: critical
+    risk_score: 78
+    drivers: [usage_drop, open_p1, renewal_soon]
+    proposal: "10% discount to hold the renewal"
+    status: rejected
+    approver: "Sam Reyes (Deal desk)"
+    note: "Rejected: fix the P1s first. Offered an exec sponsor call and an engineering escalation instead."
+    outcome: renewed
+    outcome_note: "Renewed at full price after both P1s were fixed three weeks before the renewal date. Usage recovered to baseline."
+
+  - account_slug: orion-freight
+    account_name: Orion Freight
+    days_ago: 210
+    action_type: crm_risk_update
+    risk_band: at-risk
+    risk_score: 37
+    drivers: [usage_drop, renewal_soon]
+    proposal: "Set renewal_risk_level = at-risk; start a customer success adoption plan"
+    status: approved
+    approver: "Marcus Bell (Account owner)"
+    outcome: renewed
+    outcome_note: "Renewed flat after a six-week adoption plan brought usage back to 90% of its peak."
+
+  # --- Summit Analytics: a mid-term discount request was rejected ------------------
+  - account_slug: summit-analytics
+    account_name: Summit Analytics
+    days_ago: 95
+    action_type: pricing_exception
+    risk_band: at-risk
+    risk_score: 45
+    drivers: [usage_drop, open_p1]
+    proposal: "10% mid-term discount after billing errors"
+    status: rejected
+    approver: "Dana Whitfield (Finance)"
+    note: "Rejected: correct the billing errors with a service credit for the overcharged seats, not a discount. Revisit at renewal with an adoption plan."
+
+  - account_slug: summit-analytics
+    account_name: Summit Analytics
+    days_ago: 95
+    action_type: crm_risk_update
+    risk_band: at-risk
+    risk_score: 45
+    drivers: [usage_drop, open_p1]
+    proposal: "Set renewal_risk_level = at-risk"
+    status: approved
+    approver: "Marcus Bell (Account owner)"
+    outcome: pending
+
+  # --- Others --------------------------------------------------------------------
+  - account_slug: granite-insurance
+    account_name: Granite Insurance
+    days_ago: 300
+    action_type: crm_risk_update
+    risk_band: at-risk
+    risk_score: 42
+    drivers: [open_p1, renewal_soon]
+    proposal: "Set renewal_risk_level = at-risk (EU data residency concerns)"
+    status: approved
+    approver: "Priya Shah (Account owner)"
+    outcome: renewed
+    outcome_note: "Renewed after we committed to an EU data residency roadmap in writing."
+
+  - account_slug: northpeak-retail
+    account_name: Northpeak Retail
+    days_ago: 290
+    action_type: pricing_exception
+    risk_band: healthy
+    risk_score: 12
+    drivers: [renewal_soon]
+    proposal: "5% discount for expanding from 350 to 400 seats"
+    status: approved
+    approver: "Sam Reyes (Deal desk)"
+    note: "Standard volume incentive tied to a seat expansion."
+    outcome: renewed
+    outcome_note: "Expanded to 400 seats. Usage kept pace until this summer."
+
+  - account_slug: brightwave-health
+    account_name: Brightwave Health
+    days_ago: 180
+    action_type: crm_risk_update
+    risk_band: healthy
+    risk_score: 5
+    drivers: [open_p2]
+    proposal: "Set renewal_risk_level = healthy"
+    status: approved
+    approver: "Marcus Bell (Account owner)"
+    outcome: pending

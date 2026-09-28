@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS runs (
     finished_at     TEXT,
     instruction     TEXT NOT NULL,
     model           TEXT NOT NULL,
-    status          TEXT NOT NULL,         -- running | completed | failed
+    status          TEXT NOT NULL,         -- running | awaiting_approval | completed | failed
     account_slug    TEXT,
     risk_score      INTEGER,
     risk_band       TEXT,
@@ -35,10 +35,10 @@ CREATE TABLE IF NOT EXISTS audit_log (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     ts             TEXT NOT NULL,
     run_id         TEXT,
-    actor          TEXT NOT NULL,          -- agent | executor | system
-    system         TEXT NOT NULL,          -- crm | tickets | usage | local
+    actor          TEXT NOT NULL,          -- agent | executor | system | human:<name>
+    system         TEXT NOT NULL,          -- crm | tickets | usage | memory | local | approvals
     tool           TEXT NOT NULL,
-    scope          TEXT NOT NULL,          -- read | write | local | unlisted
+    scope          TEXT NOT NULL,          -- read | write | local | decision | unlisted
     decision       TEXT NOT NULL,          -- allowed | denied
     reason         TEXT,
     args_json      TEXT NOT NULL,
@@ -49,6 +49,30 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 
 CREATE INDEX IF NOT EXISTS audit_by_run ON audit_log (run_id, id);
+
+CREATE TABLE IF NOT EXISTS approvals (
+    id             TEXT PRIMARY KEY,
+    run_id         TEXT,
+    created_at     TEXT NOT NULL,
+    account_slug   TEXT NOT NULL,
+    account_name   TEXT NOT NULL,
+    action_type    TEXT NOT NULL,          -- crm_risk_update | pricing_exception
+    system         TEXT NOT NULL,          -- the write this approval authorises...
+    tool           TEXT NOT NULL,
+    args_json      TEXT NOT NULL,          -- ...with exactly these arguments
+    payload_hash   TEXT NOT NULL,          -- sha256 of (system, tool, args)
+    summary        TEXT NOT NULL,
+    rationale      TEXT NOT NULL,
+    risk_band      TEXT NOT NULL,
+    risk_score     INTEGER NOT NULL,
+    drivers_json   TEXT NOT NULL,
+    status         TEXT NOT NULL,          -- pending | approved | rejected | executed | failed
+    decided_by     TEXT,
+    decided_at     TEXT,
+    decision_note  TEXT,
+    executed_at    TEXT,
+    result_text    TEXT
+);
 
 CREATE TRIGGER IF NOT EXISTS audit_log_no_update BEFORE UPDATE ON audit_log
 BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
@@ -110,11 +134,26 @@ class Store:
         assignments = ", ".join(f"{k}=?" for k in fields)
         self.conn.execute(f"UPDATE runs SET {assignments} WHERE id=?", (*fields.values(), run_id))
 
+    def complete_if_decided(self, run_id: str) -> None:
+        """A run awaiting approval is complete once none of its proposals are still pending."""
+        self.conn.execute(
+            "UPDATE runs SET status='completed' WHERE id=? AND status='awaiting_approval'"
+            " AND NOT EXISTS (SELECT 1 FROM approvals WHERE run_id=? AND status='pending')",
+            (run_id, run_id),
+        )
+
     def get_run(self, run_id: str) -> sqlite3.Row | None:
         return self.conn.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
 
-    def latest_run(self) -> sqlite3.Row | None:
+    def latest_run(self, account_slug: str | None = None) -> sqlite3.Row | None:
+        if account_slug:
+            return self.conn.execute(
+                "SELECT * FROM runs WHERE account_slug=? ORDER BY started_at DESC, rowid DESC LIMIT 1", (account_slug,)
+            ).fetchone()
         return self.conn.execute("SELECT * FROM runs ORDER BY started_at DESC, rowid DESC LIMIT 1").fetchone()
+
+    def recent_runs(self, limit: int = 10) -> list[sqlite3.Row]:
+        return self.conn.execute("SELECT * FROM runs ORDER BY started_at DESC, rowid DESC LIMIT ?", (limit,)).fetchall()
 
     # --- audit ----------------------------------------------------------------
     def add_audit(self, entry: AuditEntry) -> int:

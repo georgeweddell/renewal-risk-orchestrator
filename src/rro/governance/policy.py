@@ -31,9 +31,15 @@ def _no_approvals(approval_id: str, system: str, tool: str, args: dict[str, Any]
 
 
 class Policy:
-    def __init__(self, scopes: dict[tuple[str, str], Scope], approval_check: ApprovalCheck = _no_approvals):
+    def __init__(
+        self,
+        scopes: dict[tuple[str, str], Scope],
+        approval_check: ApprovalCheck = _no_approvals,
+        limits: dict[str, Any] | None = None,
+    ):
         self._scopes = scopes
         self._approval_check = approval_check
+        self.limits = limits or {}
 
     @classmethod
     def load(cls, path: Path, approval_check: ApprovalCheck = _no_approvals) -> Policy:
@@ -45,7 +51,7 @@ class Policy:
                     if (system, tool) in scopes:
                         raise ValueError(f"{system}.{tool} is listed under more than one scope in {path.name}")
                     scopes[(system, tool)] = scope
-        return cls(scopes, approval_check)
+        return cls(scopes, approval_check, raw.get("limits") or {})
 
     def scope_of(self, system: str, tool: str) -> Scope | None:
         return self._scopes.get((system, tool))
