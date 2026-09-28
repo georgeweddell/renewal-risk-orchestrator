@@ -1,0 +1,39 @@
+[project]
+name = "renewal-risk-orchestrator"
+version = "0.1.0"
+description = "An MCP-based agent that preps SaaS renewals across CRM, support, and product analytics, with governance and human approval built in."
+authors = [
+    { name = "George Weddell", email = "185487850+georgeweddell@users.noreply.github.com" }
+]
+license = "MIT"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic",
+    "mcp",
+    "pydantic>=2",
+    "pydantic-settings>=2",
+    "pyyaml",
+    "rich",
+    "typer",
+]
+
+[project.scripts]
+rro = "rro.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rro", "src/mcp_servers"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

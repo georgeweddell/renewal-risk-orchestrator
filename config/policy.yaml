@@ -1,0 +1,23 @@
+# Governance policy, enforced by the Tool Gateway (src/rro/governance), not by the prompt.
+#
+# Deny by default: if an MCP server offers a tool that isn't listed here, the
+# gateway hides it from the model and refuses to run it.
+#
+#   read  - shown to the agent; runs without approval; every call is audited.
+#   write - never shown to the agent. Only the approval executor may run it,
+#           and only for an action a human has approved.
+#
+# Servers can label their own tools read-only or destructive (MCP "tool
+# annotations"). Those labels are recorded for comparison, but this file is
+# the source of truth: a server's claims about itself aren't a security control.
+
+systems:
+  crm:
+    read: [search_crm_objects, get_crm_objects, search_owners]
+    write: [manage_crm_objects]
+
+  tickets:
+    read: [list_issues, get_issue]
+
+  usage:
+    read: [get_usage_trend]

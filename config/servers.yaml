@@ -1,0 +1,37 @@
+# How the Tool Gateway starts each MCP server, per backend (mock | live).
+# Each system's backend comes from .env (RRO_MODE or <SYSTEM>_BACKEND).
+#
+# Placeholders filled in by the app:
+#   {python}   the current Python interpreter
+#   {mock_db}  path to the seeded mock-systems database
+#
+# `env` is the complete list of variables a server receives (on top of the
+# MCP SDK's safe defaults such as PATH). Servers never inherit the
+# orchestrator's environment, so each one only ever sees its own credentials.
+
+systems:
+  crm:
+    description: "CRM: companies, renewal deals, owners (HubSpot)"
+    mock:
+      # Mirrors the subset of HubSpot's MCP tools this project uses, so the
+      # agent sees the same tool names in mock and live mode.
+      command: "{python}"
+      args: ["-m", "mcp_servers.mock_crm"]
+      env: {RRO_MOCK_DB: "{mock_db}"}
+    # live (Phase 3): HubSpot's remote MCP server, Streamable HTTP + OAuth.
+
+  tickets:
+    description: "Support tickets (GitHub Issues as a stand-in)"
+    mock:
+      command: "{python}"
+      args: ["-m", "mcp_servers.tickets"]
+      env: {TICKETS_BACKEND: mock, RRO_MOCK_DB: "{mock_db}"}
+    # live (Phase 3): same server, TICKETS_BACKEND=github.
+
+  usage:
+    description: "Product usage analytics (PostHog)"
+    mock:
+      command: "{python}"
+      args: ["-m", "mcp_servers.usage"]
+      env: {USAGE_BACKEND: mock, RRO_MOCK_DB: "{mock_db}"}
+    # live (Phase 3): same server, USAGE_BACKEND=posthog.

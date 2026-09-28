@@ -1,0 +1,147 @@
+# Demo data: the single source of truth for every system.
+#
+# `rro seed` turns this into the mock systems. From Phase 3 the same file is
+# pushed into HubSpot, GitHub Issues and PostHog, so mock and live demos tell
+# the same story. Dates are relative to the day you seed, so the demo never
+# goes stale.
+#
+# usage.change_pct: weekly active users, last 4 weeks vs the 8 weeks before.
+# expected_band: what the deterministic risk engine should conclude (tested).
+
+owners:
+  - {id: "9001", first_name: Priya, last_name: Shah, email: priya.shah@example.com}
+  - {id: "9002", first_name: Marcus, last_name: Bell, email: marcus.bell@example.com}
+  - {id: "9003", first_name: Dana, last_name: Okafor, email: dana.okafor@example.com}
+
+accounts:
+  # --- Healthy -----------------------------------------------------------------
+  - slug: brightwave-health
+    name: Brightwave Health
+    domain: brightwavehealth.example
+    industry: Healthcare
+    employees: 1200
+    arr: 142000
+    seats: 300
+    owner: "9002"
+    renewal_in_days: 150
+    deal_stage: qualifiedtobuy
+    usage: {baseline_wau: 240, change_pct: 12}
+    tickets:
+      - {priority: P2, title: "Dashboard filters reset after page refresh", age_days: 6}
+      - {priority: P3, title: "Typo in weekly digest email", age_days: 30, state: closed}
+    expected_band: healthy
+
+  - slug: kestrel-logistics
+    name: Kestrel Logistics
+    domain: kestrellogistics.example
+    industry: Logistics
+    employees: 430
+    arr: 64000
+    seats: 90
+    owner: "9003"
+    renewal_in_days: 45
+    deal_stage: contractsent
+    usage: {baseline_wau: 78, change_pct: 3}
+    tickets:
+      - {priority: P3, title: "CSV import rejects UTF-8 BOM", age_days: 52, state: closed}
+    expected_band: healthy
+
+  - slug: orchard-financial
+    name: Orchard Financial
+    domain: orchardfinancial.example
+    industry: Financial Services
+    employees: 2600
+    arr: 310000
+    seats: 520
+    owner: "9001"
+    renewal_in_days: 200
+    deal_stage: appointmentscheduled
+    usage: {baseline_wau: 410, change_pct: 20}
+    tickets:
+      - {priority: P2, title: "Audit log export missing timezone offset", age_days: 12}
+    expected_band: healthy
+
+  # --- At risk -----------------------------------------------------------------
+  - slug: northpeak-retail
+    name: Northpeak Retail
+    domain: northpeakretail.example
+    industry: Retail
+    employees: 3100
+    arr: 228000
+    seats: 400
+    owner: "9002"
+    renewal_in_days: 75
+    deal_stage: presentationscheduled
+    usage: {baseline_wau: 330, change_pct: -25}
+    tickets:
+      - {priority: P2, title: "Store-level reports take 40s+ to load", age_days: 21}
+      - {priority: P3, title: "Feature request: bulk user import via SCIM", age_days: 35}
+    expected_band: at-risk
+
+  - slug: tidewater-media
+    name: Tidewater Media
+    domain: tidewatermedia.example
+    industry: Media
+    employees: 540
+    arr: 88000
+    seats: 120
+    owner: "9003"
+    renewal_in_days: 40
+    deal_stage: decisionmakerboughtin
+    usage: {baseline_wau: 105, change_pct: -14}
+    tickets:
+      - {priority: P1, title: "Webhook deliveries delayed by up to 2 hours", age_days: 6}
+      - {priority: P2, title: "429 rate-limit errors during nightly sync", age_days: 15}
+    expected_band: at-risk
+
+  - slug: granite-insurance
+    name: Granite Insurance
+    domain: graniteinsurance.example
+    industry: Insurance
+    employees: 1900
+    arr: 175000
+    seats: 260
+    owner: "9001"
+    renewal_in_days: 25
+    deal_stage: contractsent
+    usage: {baseline_wau: 215, change_pct: -2}
+    tickets:
+      - {priority: P1, title: "Data residency: records replicated outside EU region", age_days: 30}
+      - {priority: P1, title: "SAML assertion errors for newly provisioned users", age_days: 4}
+      - {priority: P3, title: "Dark mode contrast on charts", age_days: 60, state: closed}
+    expected_band: at-risk
+
+  # --- Critical ----------------------------------------------------------------
+  - slug: halcyon-robotics
+    name: Halcyon Robotics
+    domain: halcyonrobotics.example
+    industry: Manufacturing
+    employees: 850
+    arr: 186000
+    seats: 220
+    owner: "9001"
+    renewal_in_days: 28
+    deal_stage: contractsent
+    usage: {baseline_wau: 180, change_pct: -45}
+    tickets:
+      - {priority: P1, title: "SSO login loop after Okta migration", age_days: 19}
+      - {priority: P1, title: "Scheduled exports failing for EU workspace", age_days: 9}
+      - {priority: P3, title: "Request: API key rotation reminders", age_days: 44, state: closed}
+    expected_band: critical
+
+  - slug: summit-analytics
+    name: Summit Analytics
+    domain: summitanalytics.example
+    industry: Software
+    employees: 640
+    arr: 132000
+    seats: 150
+    owner: "9002"
+    renewal_in_days: 55
+    deal_stage: decisionmakerboughtin
+    usage: {baseline_wau: 140, change_pct: -30}
+    tickets:
+      - {priority: P1, title: "Query timeouts on datasets over 50M rows", age_days: 25}
+      - {priority: P1, title: "Billing sync double-charged 14 seats", age_days: 11}
+      - {priority: P2, title: "Slack integration disconnects daily", age_days: 8}
+    expected_band: critical

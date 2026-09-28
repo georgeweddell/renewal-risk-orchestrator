@@ -1,0 +1,29 @@
+# Renewal risk scoring. Deterministic and explainable by design: the agent
+# gathers the signals and interprets them, but the score comes from here.
+#
+# Rules within a factor are checked top to bottom; the first match wins.
+
+usage_change:
+  # Weekly active users: average of the last 4 weeks vs the 8 weeks before.
+  - {max_pct: -40, points: 40, label: "Usage down 40% or more"}
+  - {max_pct: -20, points: 25, label: "Usage down 20-40%"}
+  - {max_pct: -10, points: 10, label: "Usage down 10-20%"}
+
+open_p1:
+  points_each: 15
+  cap: 30
+
+open_p2:
+  points_each: 5
+  cap: 10
+
+days_to_renewal:
+  - {max_days: 29, points: 20, label: "Renewal within 30 days"}
+  - {max_days: 59, points: 12, label: "Renewal within 60 days"}
+  - {max_days: 89, points: 6, label: "Renewal within 90 days"}
+
+# Highest threshold first.
+bands:
+  - {min_score: 65, band: critical}
+  - {min_score: 35, band: at-risk}
+  - {min_score: 0, band: healthy}
