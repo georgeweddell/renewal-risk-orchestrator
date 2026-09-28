@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass
 from time import perf_counter
@@ -87,22 +88,31 @@ def resolve_launch(settings: Settings) -> dict[str, StdioServerParameters]:
         if entry is None:
             raise GatewayConfigError(
                 f"No '{backend}' backend is configured for '{system}' in config/servers.yaml. "
-                f"Live connections arrive in Phase 3; set {system.upper()}_BACKEND=mock for now."
+                f"Set {system.upper()}_BACKEND=mock, or add a '{backend}' entry."
             )
-        env = {k: _expand(str(v), fill) for k, v in (entry.get("env") or {}).items()}
+        expand = lambda value: _expand(str(value), fill, settings, system)  # noqa: E731
         launches[system] = StdioServerParameters(
-            command=_expand(entry["command"], fill),
-            args=[_expand(str(a), fill) for a in entry.get("args", [])],
-            env=env,
+            command=expand(entry["command"]),
+            args=[expand(a) for a in entry.get("args", [])],
+            env={k: expand(v) for k, v in (entry.get("env") or {}).items()},
             cwd=settings.rro_home,
         )
     return launches
 
 
-def _expand(value: str, fill: dict[str, str]) -> str:
+def _expand(value: str, fill: dict[str, str], settings: Settings, system: str) -> str:
+    """Fill {placeholders}, then ${NAME} references to settings from .env (or the environment)."""
     for placeholder, replacement in fill.items():
         value = value.replace(placeholder, replacement)
-    return os.path.expandvars(value)  # ${VAR} references to the orchestrator's environment
+
+    def lookup(match: re.Match) -> str:
+        name = match.group(1)
+        resolved = settings.value(name) or os.environ.get(name)
+        if not resolved:
+            raise GatewayConfigError(f"{name} is not set. The '{system}' server needs it in live mode; add it to .env.")
+        return resolved
+
+    return re.sub(r"\$\{([A-Z0-9_]+)\}", lookup, value)
 
 
 class ToolGateway:

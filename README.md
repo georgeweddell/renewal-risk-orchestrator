@@ -20,9 +20,9 @@ A renewal is a good test of whether an agent can do real cross-system work. The 
 
 | Step | Status |
 |---|---|
-| 1. Pull the account, renewal deal and owner from the CRM (HubSpot) | ✅ mock · live in Phase 3 |
-| 2. Pull open support issues (GitHub Issues as a stand-in ticketing system) | ✅ mock · live in Phase 3 |
-| 3. Pull the product usage trend (PostHog) | ✅ mock · live in Phase 3 |
+| 1. Pull the account, renewal deal and owner from the CRM (HubSpot) | ✅ mock · ✅ live |
+| 2. Pull open support issues (GitHub Issues as a stand-in ticketing system) | ✅ mock · ✅ live |
+| 3. Pull the product usage trend (PostHog) | ✅ mock · ✅ live |
 | 4. Score renewal risk with explainable reasoning, and check precedent in memory | ✅ |
 | 5. Write an account team briefing (markdown) | ✅ |
 | 6. Propose a CRM risk update and a pricing exception, routed for human approval | ✅ web UI + CLI · Slack in Phase 4 |
@@ -82,6 +82,24 @@ uv run rro approvals        # what's waiting for a human
 uv run rro audit            # every call the agent made
 ```
 
+## Live mode
+
+The same agent, policy and prompts, pointed at real systems. Every account is on a free tier:
+
+| System | Account | What goes in `.env` |
+|---|---|---|
+| HubSpot | Developer account → **developer test account**, with a private app / service key (companies and deals read/write, owners read, deal and company schemas read/write) | `HUBSPOT_ACCESS_TOKEN` |
+| GitHub Issues | A repo for tickets, plus a fine-grained token with **Issues: read and write** on that repo only | `GITHUB_TICKETS_REPO`, `GITHUB_TOKEN` |
+| PostHog | A project, plus a personal API key with **Query: read** and **Project: read** | `POSTHOG_HOST`, `POSTHOG_PROJECT_ID`, `POSTHOG_PROJECT_API_KEY`, `POSTHOG_PERSONAL_API_KEY` |
+
+```bash
+uv run rro seed-live         # load the same 8-account story into HubSpot, GitHub and PostHog
+uv run rro --live score      # should match `rro score` in mock mode, account for account
+uv run rro --live serve      # or: rro --live run "Prep the renewal for Halcyon Robotics"
+```
+
+`seed-live` only writes to a HubSpot developer test account or sandbox, and is safe to re-run. Each system can also be switched on its own, e.g. `CRM_BACKEND=live` with everything else on mock data.
+
 ## The 3-minute demo
 
 Run `rro reset -y` first, then `rro serve`.
@@ -100,6 +118,8 @@ From the terminal, `rro tools` shows the policy at work (`crm.manage_crm_objects
 | Command | What it does |
 |---|---|
 | `rro seed` | Rebuild the mock systems and memory from `seed/` (dates are relative to today) |
+| `rro seed-live` | Load the same story into HubSpot (test account only), GitHub Issues and PostHog |
+| `rro --live <command>` | Run any command against the live systems instead of mock data |
 | `rro accounts` | List the demo accounts |
 | `rro tools` | Tool inventory: policy scope, whether the agent sees it, and what the server claims about itself |
 | `rro run "<instruction>"` | Run the agent: briefing plus proposals for approval |
@@ -143,13 +163,14 @@ src/rro/
   web/             FastAPI + Jinja web UI
   risk.py          deterministic scoring engine
   signals.py       LLM-free signal collection (ground truth)
+  live_seed.py     loads the demo story into HubSpot, GitHub and PostHog
   runtime.py       wires it all together for the CLI, web app and tests
   db.py            runs, approvals, append-only audit log
   cli.py           the `rro` command
 src/mcp_servers/
-  mock_crm/        mirrors the HubSpot MCP tools this project uses
-  tickets/         task-shaped ticket tools (mock backend; GitHub in Phase 3)
-  usage/           task-shaped usage tools (mock backend; PostHog in Phase 3)
+  crm/             HubSpot-named CRM tools; backends: mock, HubSpot REST
+  tickets/         task-shaped ticket tools; backends: mock, GitHub Issues
+  usage/           task-shaped usage tools; backends: mock, PostHog (HogQL)
   memory/          past renewal decisions, read-only over MCP
 tests/             unit + integration tests (real MCP servers, scripted LLM)
 ```
@@ -174,7 +195,8 @@ The integration tests start the real MCP servers over stdio and drive the agent 
 
 - [x] **Phase 1**: mock mode end to end: seeded data, read-only MCP tools, governance gateway, risk score, briefing.
 - [x] **Phase 2**: decision memory, proposals, approval gate + executor, web UI.
-- [ ] **Phase 3**: live reads from HubSpot, GitHub Issues and PostHog.
+- [x] **Phase 3**: live HubSpot, GitHub Issues and PostHog backends, live seeding, mock/live parity check.
+- [ ] **Phase 3b**: HubSpot's own remote MCP server as an alternative CRM backend (OAuth).
 - [ ] **Phase 4**: Slack approvals (Socket Mode) and approved writes to HubSpot.
 - [ ] **Phase 5**: polish: demo recording, evals, CI.
 

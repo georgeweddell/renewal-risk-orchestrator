@@ -35,11 +35,34 @@ class Settings(BaseSettings):
     # Name recorded against approvals made from the web UI or CLI (Slack supplies real identities in Phase 4).
     rro_approver_name: str = "Demo approver"
 
+    # Live systems. Passed only to the MCP server that needs each one; see config/servers.yaml.
+    hubspot_access_token: SecretStr | None = None
+    github_tickets_repo: str | None = None
+    github_token: SecretStr | None = None
+    posthog_host: str = "https://us.posthog.com"
+    posthog_project_id: str | None = None
+    posthog_project_api_key: SecretStr | None = None
+    posthog_personal_api_key: SecretStr | None = None
+
     # Locations (override for tests)
     rro_home: Path = PROJECT_ROOT
 
     def backend_for(self, system: str) -> Backend:
         return getattr(self, f"{system}_backend", None) or self.rro_mode
+
+    def value(self, name: str) -> str | None:
+        """A setting by its .env name (e.g. "GITHUB_TOKEN"), with secrets unwrapped."""
+        value = getattr(self, name.lower(), None)
+        if isinstance(value, SecretStr):
+            value = value.get_secret_value()
+        return str(value) if value not in (None, "") else None
+
+    @property
+    def posthog_ingest_host(self) -> str:
+        """PostHog receives events on a separate host: us.posthog.com -> us.i.posthog.com."""
+        return self.posthog_host.rstrip("/").replace("://us.posthog.com", "://us.i.posthog.com").replace(
+            "://eu.posthog.com", "://eu.i.posthog.com"
+        )
 
     @property
     def config_dir(self) -> Path:

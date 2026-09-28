@@ -5,23 +5,26 @@
 #   {python}     the current Python interpreter
 #   {mock_db}    path to the seeded mock-systems database
 #   {memory_db}  path to the decision memory
+#   ${NAME}      a value from .env (e.g. ${GITHUB_TOKEN}); a missing one is a clear error
 #
 # An entry with a top-level `command` runs the same way in every mode.
 #
 # `env` is the complete list of variables a server receives (on top of the
 # MCP SDK's safe defaults such as PATH). Servers never inherit the
-# orchestrator's environment, so each one only ever sees its own credentials.
+# orchestrator's environment, so each one only ever sees its own credentials:
+# the usage server gets PostHog's read-only key and nothing else.
 
 systems:
   crm:
     description: "CRM: companies, renewal deals, owners (HubSpot)"
     mock:
-      # Mirrors the subset of HubSpot's MCP tools this project uses, so the
-      # agent sees the same tool names in mock and live mode.
       command: "{python}"
-      args: ["-m", "mcp_servers.mock_crm"]
-      env: {RRO_MOCK_DB: "{mock_db}"}
-    # live (Phase 3): HubSpot's remote MCP server, Streamable HTTP + OAuth.
+      args: ["-m", "mcp_servers.crm"]
+      env: {CRM_BACKEND: mock, RRO_MOCK_DB: "{mock_db}"}
+    live:
+      command: "{python}"
+      args: ["-m", "mcp_servers.crm"]
+      env: {CRM_BACKEND: hubspot, HUBSPOT_ACCESS_TOKEN: "${HUBSPOT_ACCESS_TOKEN}"}
 
   tickets:
     description: "Support tickets (GitHub Issues as a stand-in)"
@@ -29,7 +32,10 @@ systems:
       command: "{python}"
       args: ["-m", "mcp_servers.tickets"]
       env: {TICKETS_BACKEND: mock, RRO_MOCK_DB: "{mock_db}"}
-    # live (Phase 3): same server, TICKETS_BACKEND=github.
+    live:
+      command: "{python}"
+      args: ["-m", "mcp_servers.tickets"]
+      env: {TICKETS_BACKEND: github, GITHUB_TICKETS_REPO: "${GITHUB_TICKETS_REPO}", GITHUB_TOKEN: "${GITHUB_TOKEN}"}
 
   usage:
     description: "Product usage analytics (PostHog)"
@@ -37,7 +43,14 @@ systems:
       command: "{python}"
       args: ["-m", "mcp_servers.usage"]
       env: {USAGE_BACKEND: mock, RRO_MOCK_DB: "{mock_db}"}
-    # live (Phase 3): same server, USAGE_BACKEND=posthog.
+    live:
+      command: "{python}"
+      args: ["-m", "mcp_servers.usage"]
+      env:
+        USAGE_BACKEND: posthog
+        POSTHOG_HOST: "${POSTHOG_HOST}"
+        POSTHOG_PROJECT_ID: "${POSTHOG_PROJECT_ID}"
+        POSTHOG_PERSONAL_API_KEY: "${POSTHOG_PERSONAL_API_KEY}"
 
   memory:
     description: "Past renewal decisions and outcomes (this app's own store)"

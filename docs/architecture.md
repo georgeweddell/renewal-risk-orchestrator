@@ -49,9 +49,24 @@ In testing, this changes behaviour in the ways you'd want. For Halcyon, the agen
 
 **Our own servers expose task-shaped tools.** `tickets.list_issues(account_id)` returns issues plus a count by priority. `usage.get_usage_trend(account_id)` returns the series plus a summary computed the same way every time. The agent doesn't write HogQL or GitHub search syntax, so it makes fewer, more reliable calls. Switching the ticketing system (GitHub to Jira or Zendesk) only needs a new backend class.
 
-**The mock CRM mirrors HubSpot's MCP tools.** HubSpot's remote MCP server (`mcp.hubspot.com`, GA with write support since April 2026) is what live mode will use. The mock server copies the names and HubSpot-style parameters of the tools we use (`search_crm_objects`, `get_crm_objects`, `search_owners`, `manage_crm_objects`), so prompts and policy are identical in both modes. The exact live schemas are reconciled in Phase 3. HubSpot's server uses OAuth 2.1 with PKCE, which the MCP Python SDK's client supports.
+**One CRM server, two backends, HubSpot's tool names.** The `crm` server exposes `search_crm_objects`, `get_crm_objects`, `search_owners` and `manage_crm_objects`, the same names HubSpot's own MCP server uses, with HubSpot CRM v3 parameters (`filterGroups` and so on). Behind it, `CRM_BACKEND=mock` reads the seeded SQLite file and `CRM_BACKEND=hubspot` calls the HubSpot REST API with a private app token. Both return the same shapes (only the requested properties; associations as lists of IDs), so the agent, policy and prompt don't change between modes.
+
+**Why not HubSpot's remote MCP server yet.** HubSpot's own server (`mcp.hubspot.com`) is the natural choice, and it's Phase 3b. Using it from a custom client means creating an "MCP connector" in the developer account and running an OAuth 2.1 + PKCE login (the MCP Python SDK supports this). Its write tool also runs its own "confirm before writing" step, which has to be reconciled with our approval gate: our executor already carries a human approval. Our own server gets live mode working with a single token, and swapping in HubSpot's server is a change to `config/servers.yaml`, with no change to the orchestrator.
 
 **Why Slack approvals won't go through MCP (Phase 4).** MCP is client-initiated request and response. A human clicking "Approve" is an *inbound* event, which is a job for Slack's Bolt SDK in Socket Mode (a websocket, so no public URL is needed). Most Slack MCP servers can't send interactive buttons either.
+
+## Live mode
+
+**Least privilege, per server.** `config/servers.yaml` hands each server only its own credentials through `${NAME}` references to `.env`. The CRM server gets the HubSpot token, the tickets server the GitHub token, and the usage server PostHog's *read* key, but not the key that can send events. A missing value stops start-up with a message naming it.
+
+**Same story everywhere.** `rro seed-live` uses the same generators as mock seeding, so live and mock give identical usage figures and ticket counts. `rro --live score` is the parity check.
+
+**Details worth knowing:**
+- *HubSpot.* Seeding refuses any account that isn't a developer test account or sandbox. It creates custom properties in a "Renewal Risk Orchestrator" group, matches records on `account_slug` so re-runs update rather than duplicate, and clears the risk and pricing fields on re-seed so each demo starts clean. HubSpot owners are real user logins, so the demo's account owners are kept in an `account_owner_name` company field.
+- *GitHub Issues.* An issue belongs to an account through an `account:<slug>` label, and its priority is a P1/P2/P3 label. GitHub can't backdate issues, so seeded issues carry their original report date in a hidden `<!-- rro:reported_at=… -->` comment, which the backend reads. Real issues fall back to GitHub's own timestamps.
+- *PostHog.* A user is active in a week if they sent an `app_session` event with `account_id` set. The backend counts only complete Monday-to-Sunday weeks, reports weeks with no activity as zero rather than skipping them, and treats "no events at all" as an unknown account. Account IDs go into HogQL as query parameters, never by string formatting. PostHog caches query results, so the backend always asks for a fresh computation; a stale cache briefly reported zero events during testing.
+
+**Known limitation: live usage data ages.** Seeded usage covers the 12 weeks before the seed date. Because only complete weeks count, a week later the newest week has no data and the trends shift. PostHog events can't be deleted, so `seed-live` won't send usage twice to the same project. To refresh live usage for a later demo, point `.env` at a new PostHog project and run `rro seed-live --only posthog`. Mock mode doesn't have this problem, which is why it's the default for demos.
 
 ## Other decisions
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
 from typing import Annotated, Any
 
@@ -18,6 +19,7 @@ from rro.agent.llm import ClaudeLLM
 from rro.agent.orchestrator import AgentEvent
 from rro.governance.approvals import Approval, ApprovalError
 from rro.governance.gateway import GatewayConfigError
+from rro.live_seed import LiveSeedError, seed_github, seed_hubspot, seed_posthog
 from rro.risk import score
 from rro.runtime import Runtime, build_runtime
 from rro.seeding import load_seed, seed_memory, seed_mock_systems
@@ -29,6 +31,15 @@ console = Console()
 
 BAND_STYLE = {"healthy": "green", "at-risk": "yellow", "critical": "bold red"}
 STATUS_STYLE = {"pending": "yellow", "approved": "cyan", "executed": "green", "rejected": "red", "failed": "bold red"}
+
+
+@app.callback()
+def main(
+    live: Annotated[bool, typer.Option("--live", help="Use the live systems (HubSpot, GitHub, PostHog) instead of mock data.")] = False,
+) -> None:
+    if live:
+        os.environ["RRO_MODE"] = "live"  # environment variables override .env
+        get_settings.cache_clear()
 
 
 def _band(band: str | None) -> str:
@@ -62,6 +73,42 @@ def seed() -> None:
     build_runtime(settings)  # make sure the orchestrator's own database exists too
     console.print("[green]Seeded[/] mock systems: " + ", ".join(f"{v} {k}" for k, v in counts.items()))
     console.print(f"[green]Seeded[/] decision memory: {decisions} past decisions")
+
+
+@app.command("seed-live")
+def seed_live(
+    only: Annotated[list[str] | None, typer.Option(help="Only these systems: hubspot, github, posthog.")] = None,
+    force_usage: Annotated[bool, typer.Option(help="Send PostHog events even if demo events already exist.")] = False,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Don't ask for confirmation.")] = False,
+) -> None:
+    """Load the demo story into the live systems: HubSpot (test account only), GitHub Issues and PostHog."""
+    settings = get_settings()
+    systems = only or ["hubspot", "github", "posthog"]
+    unknown = set(systems) - {"hubspot", "github", "posthog"}
+    if unknown:
+        _fail(f"Unknown system(s): {', '.join(sorted(unknown))}")
+    if not yes:
+        console.print("This creates or updates, in your live accounts:")
+        if "hubspot" in systems:
+            console.print("  • HubSpot: custom properties, 8 companies, 16 deals (developer test accounts only)")
+        if "github" in systems:
+            console.print(f"  • GitHub: labels and 17 issues in {settings.github_tickets_repo}")
+        if "posthog" in systems:
+            console.print("  • PostHog: about 40,000 backdated events, 4% of the free monthly allowance (only if the project has none yet)")
+        typer.confirm("Continue?", abort=True)
+    seed = load_seed(settings.seed_file)
+    steps = {"hubspot": seed_hubspot, "github": seed_github, "posthog": seed_posthog}
+    for system in ("hubspot", "github", "posthog"):
+        if system not in systems:
+            continue
+        try:
+            if system == "posthog":
+                seed_posthog(settings, seed, console.print, force=force_usage)
+            else:
+                steps[system](settings, seed, console.print)
+        except LiveSeedError as exc:
+            _fail(str(exc))
+    console.print("[green]Done.[/] PostHog can take a few minutes to make new events queryable. Then check parity with: [bold]rro --live score[/]")
 
 
 @app.command()
@@ -223,6 +270,7 @@ def score_accounts(
     rt = _runtime()
     seeded = {a.slug: a for a in load_seed(rt.settings.seed_file).accounts}
     slugs = [slug] if slug else list(seeded)
+    console.print(f"[dim]Backends: " + ", ".join(f"{s}={rt.settings.backend_for(s)}" for s in ("crm", "tickets", "usage")) + "[/]")
 
     async def main() -> None:
         _starting()
@@ -298,7 +346,7 @@ def serve(
     """Start the web UI: run the agent, review briefings, approve or reject proposals."""
     import uvicorn
 
-    console.print(f"Renewal Risk Orchestrator on [bold]http://{host}:{port}[/]")
+    console.print(f"Renewal Risk Orchestrator ({get_settings().rro_mode} mode) on [bold]http://{host}:{port}[/]")
     uvicorn.run("rro.web.app:app", host=host, port=port, log_level="warning")
 
 

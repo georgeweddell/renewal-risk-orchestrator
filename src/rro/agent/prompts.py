@@ -18,7 +18,7 @@ happened next.
 
 ## How to work
 1. Find the company in the CRM, then its open renewal deal (a deal associated with the company \
-that isn't closed won or lost) and the account owner.
+that isn't closed won or lost). The account owner is the company's `account_owner_name`.
 2. Get the account's open support issues and its usage trend. These calls don't depend on each \
 other, so make them in parallel.
 3. Call score_renewal_risk with the numbers exactly as the systems reported them. The score comes \

@@ -1,7 +1,7 @@
 # Demo data: the single source of truth for every system.
 #
-# `rro seed` turns this into the mock systems. From Phase 3 the same file is
-# pushed into HubSpot, GitHub Issues and PostHog, so mock and live demos tell
+# `rro seed` turns this into the mock systems, and `rro seed-live` pushes the same file
+# into HubSpot, GitHub Issues and PostHog, so mock and live demos tell
 # the same story. Dates are relative to the day you seed, so the demo never
 # goes stale.
 #
