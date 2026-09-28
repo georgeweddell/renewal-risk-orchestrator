@@ -8,7 +8,7 @@ Built with Claude (Anthropic API), the Model Context Protocol (MCP), FastAPI and
 
 ## Why this exists
 
-Everest Group's research on *work orchestration platforms* uses a renewal as its example workflow. It argues that most agent tooling is weakest on three layers. This project is built around those three:
+A renewal is a good test of whether an agent can do real cross-system work. The data is spread across the CRM, the support queue and product analytics, and the outcome is a change to a system of record that someone has to sign off. Connecting an LLM to a few APIs is the easy part. What makes an agent trustworthy enough to act is three layers that most agent tooling handles poorly, and this project is built around them:
 
 | Layer | What that means here |
 |---|---|
