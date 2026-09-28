@@ -15,28 +15,36 @@ from rich.panel import Panel
 from rich.table import Table
 
 from rro.agent.llm import ClaudeLLM
-from rro.agent.orchestrator import AgentEvent, Orchestrator
-from rro.db import Store
-from rro.governance.gateway import GatewayConfigError, ToolGateway
-from rro.governance.policy import Policy
-from rro.risk import RiskConfig, score
-from rro.seeding import load_seed, seed_mock_systems
-from rro.settings import Settings, get_settings
+from rro.agent.orchestrator import AgentEvent
+from rro.governance.approvals import Approval, ApprovalError
+from rro.governance.gateway import GatewayConfigError
+from rro.risk import score
+from rro.runtime import Runtime, build_runtime
+from rro.seeding import load_seed, seed_memory, seed_mock_systems
+from rro.settings import get_settings
 from rro.signals import SignalError, collect_signals
 
 app = typer.Typer(help="Renewal Risk Orchestrator: prep SaaS renewals across CRM, support and usage data.", no_args_is_help=True)
 console = Console()
 
 BAND_STYLE = {"healthy": "green", "at-risk": "yellow", "critical": "bold red"}
+STATUS_STYLE = {"pending": "yellow", "approved": "cyan", "executed": "green", "rejected": "red", "failed": "bold red"}
 
 
 def _band(band: str | None) -> str:
     return f"[{BAND_STYLE.get(band or '', 'white')}]{band or '-'}[/]"
 
 
-def _gateway(settings: Settings, store: Store) -> ToolGateway:
-    console.print("[dim]Starting MCP servers: crm, tickets, usage…[/]")
-    return ToolGateway(settings, Policy.load(settings.config_dir / "policy.yaml"), store)
+def _status(status: str) -> str:
+    return f"[{STATUS_STYLE.get(status, 'white')}]{status}[/]"
+
+
+def _runtime() -> Runtime:
+    return build_runtime(get_settings())
+
+
+def _starting() -> None:
+    console.print("[dim]Starting MCP servers: crm, tickets, usage, memory…[/]")
 
 
 def _fail(message: str) -> None:
@@ -47,19 +55,21 @@ def _fail(message: str) -> None:
 # --- data ----------------------------------------------------------------------
 @app.command()
 def seed() -> None:
-    """Rebuild the mock systems (CRM, tickets, usage) from seed/accounts.yaml."""
+    """Rebuild the mock systems and the decision memory from seed/."""
     settings = get_settings()
     counts = seed_mock_systems(load_seed(settings.seed_file), settings.mock_db)
-    Store.open(settings.rro_db)  # make sure the orchestrator's own database exists too
-    console.print(f"[green]Seeded[/] {settings.mock_db.relative_to(settings.rro_home)}: " + ", ".join(f"{v} {k}" for k, v in counts.items()))
+    decisions = seed_memory(settings.memory_seed_file, settings.memory_db)
+    build_runtime(settings)  # make sure the orchestrator's own database exists too
+    console.print("[green]Seeded[/] mock systems: " + ", ".join(f"{v} {k}" for k, v in counts.items()))
+    console.print(f"[green]Seeded[/] decision memory: {decisions} past decisions")
 
 
 @app.command()
 def reset(yes: Annotated[bool, typer.Option("--yes", "-y", help="Don't ask for confirmation.")] = False) -> None:
-    """Delete run history, the audit log and generated briefings, then reseed. For resetting a demo."""
+    """Delete runs, approvals, the audit log and briefings, then reseed. For resetting a demo."""
     settings = get_settings()
     if not yes:
-        typer.confirm("This deletes all runs, the audit log and generated briefings. Continue?", abort=True)
+        typer.confirm("This deletes all runs, approvals, the audit log and generated briefings. Continue?", abort=True)
     settings.rro_db.unlink(missing_ok=True)
     shutil.rmtree(settings.output_dir / "briefings", ignore_errors=True)
     seed()
@@ -76,14 +86,32 @@ def accounts() -> None:
     console.print(table)
 
 
+@app.command()
+def memory(slug: Annotated[str | None, typer.Argument(help="Only this account.")] = None) -> None:
+    """Show the decision memory: past proposals, human decisions and outcomes."""
+    rt = _runtime()
+    decisions = rt.memory.for_account(slug) if slug else rt.memory.all()
+    table = Table("Date", "Account", "Action", "Risk", "Proposal", "Decision", "Outcome")
+    for d in decisions:
+        decision = f"{_status(d.status)} [dim]{d.approver}[/]"
+        if d.note:
+            decision += f"\n[dim]{d.note}[/]"
+        outcome = d.outcome or "-"
+        if d.outcome_note:
+            outcome += f"\n[dim]{d.outcome_note}[/]"
+        table.add_row(d.decided_on, d.account_name, d.action_type, f"{_band(d.risk_band)} {d.risk_score}", d.proposal, decision, outcome)
+    console.print(table)
+
+
 # --- governance ------------------------------------------------------------------
 @app.command()
 def tools() -> None:
     """Show every tool the MCP servers offer and what the policy lets the agent do with it."""
-    settings = get_settings()
+    rt = _runtime()
 
     async def main() -> None:
-        async with _gateway(settings, Store.open(settings.rro_db)) as gateway:
+        _starting()
+        async with rt.gateway as gateway:
             table = Table("Tool", "Policy scope", "Shown to agent", "Server says")
             for spec in gateway.inventory():
                 hint = {True: "read-only", False: "writes", None: "-"}[spec.read_only_hint]
@@ -106,21 +134,84 @@ def audit(
     run_id: Annotated[str | None, typer.Argument(help="Run ID. Defaults to the latest run.")] = None,
     full: Annotated[bool, typer.Option(help="Show full arguments.")] = False,
 ) -> None:
-    """Show the audit log for a run: every tool call, allowed or denied."""
-    store = Store.open(get_settings().rro_db)
+    """Show the audit log for a run: every tool call and human decision, allowed or denied."""
+    store = _runtime().store
     run = store.get_run(run_id) if run_id else store.latest_run()
     if run is None:
         _fail("No such run." if run_id else "No runs yet. Try `rro run \"Prep the renewal for Halcyon Robotics\"`.")
     rows = store.audit_for_run(run["id"])
-    console.print(f"Run [bold]{run['id']}[/] · {run['instruction']!r} · {run['status']} · {len(rows)} tool calls")
+    console.print(f"Run [bold]{run['id']}[/] · {run['instruction']!r} · {run['status']} · {len(rows)} entries")
     table = Table("#", "Time (UTC)", "Actor", "Tool", "Scope", "Decision", "Arguments", "ms")
     for row in rows:
         args = row["args_json"] if full else _truncate(row["args_json"], 60)
         decision = "[green]allowed[/]" if row["decision"] == "allowed" else f"[red]denied[/] [dim]{row['reason']}[/]"
         if row["is_error"] and row["decision"] == "allowed":
             decision += " [yellow](error)[/]"
+        if row["approval_id"]:
+            decision += f" [dim]{row['approval_id']}[/]"
         table.add_row(str(row["id"]), row["ts"][11:19], row["actor"], f"{row['system']}.{row['tool']}", row["scope"], decision, args, str(row["latency_ms"] or ""))
     console.print(table)
+
+
+@app.command()
+def approvals(
+    all_: Annotated[bool, typer.Option("--all", help="Include decided approvals, not just pending ones.")] = False,
+) -> None:
+    """List proposed actions waiting for a human (or, with --all, every decision)."""
+    items = _runtime().approvals.list(status=None if all_ else "pending")
+    if not items:
+        console.print("Nothing waiting for approval." if not all_ else "No approvals yet.")
+        return
+    table = Table("ID", "Account", "Action", "Proposal", "Status", "Decided by")
+    for a in items:
+        table.add_row(a.id, a.account_name, a.action_type, a.summary, _status(a.status), a.decided_by or "")
+    console.print(table)
+    if not all_:
+        console.print("[dim]rro approve <ID>   ·   rro reject <ID> --note \"why\"[/]")
+
+
+@app.command()
+def approve(
+    approval_id: str,
+    by: Annotated[str | None, typer.Option(help="Who is approving. Defaults to RRO_APPROVER_NAME.")] = None,
+    note: Annotated[str | None, typer.Option(help="Optional note, kept in memory.")] = None,
+) -> None:
+    """Approve a proposed action. The executor then makes exactly that write, through the gateway."""
+    rt = _runtime()
+    approver = by or rt.settings.rro_approver_name
+
+    async def main() -> Approval:
+        _starting()
+        async with rt.gateway:
+            return await rt.approval_service().approve(approval_id, by=approver, note=note)
+
+    result = _run_async(main)
+    _print_decision(result)
+
+
+@app.command()
+def reject(
+    approval_id: str,
+    note: Annotated[str, typer.Option(help="Why. Required: future runs learn from it.")],
+    by: Annotated[str | None, typer.Option(help="Who is rejecting. Defaults to RRO_APPROVER_NAME.")] = None,
+) -> None:
+    """Reject a proposed action. Nothing is written; the reason goes into memory."""
+    rt = _runtime()
+    try:
+        result = rt.approval_service().reject(approval_id, by=by or rt.settings.rro_approver_name, note=note)
+    except ApprovalError as exc:
+        _fail(str(exc))
+    _print_decision(result)
+
+
+def _print_decision(a: Approval) -> None:
+    console.print(f"{a.id}: {_status(a.status)} by {a.decided_by}. {a.summary}")
+    if a.status == "executed":
+        console.print("[green]Written to the CRM by the executor.[/] Recorded in memory. See `rro audit " + (a.run_id or "") + "`.")
+    elif a.status == "failed":
+        console.print(f"[red]The write failed:[/] {a.result_text}")
+    elif a.status == "rejected":
+        console.print("Nothing was written. The rejection and its reason are now in memory for future runs.")
 
 
 # --- risk ------------------------------------------------------------------------
@@ -129,20 +220,20 @@ def score_accounts(
     slug: Annotated[str | None, typer.Argument(help="Account slug. Defaults to every seeded account.")] = None,
 ) -> None:
     """Score accounts deterministically (no LLM): the ground truth the agent should match."""
-    settings = get_settings()
-    config = RiskConfig.load(settings.config_dir / "risk.yaml")
-    seeded = {a.slug: a for a in load_seed(settings.seed_file).accounts}
+    rt = _runtime()
+    seeded = {a.slug: a for a in load_seed(rt.settings.seed_file).accounts}
     slugs = [slug] if slug else list(seeded)
 
     async def main() -> None:
-        async with _gateway(settings, Store.open(settings.rro_db)) as gateway:
+        _starting()
+        async with rt.gateway as gateway:
             table = Table("Account", "Usage", "Open P1", "Open P2", "Renewal in", "Score", "Band", "Designed as")
             for s in slugs:
                 try:
                     acct = await collect_signals(gateway, s)
                 except SignalError as exc:
                     _fail(str(exc))
-                result = score(acct.signals, config)
+                result = score(acct.signals, rt.risk_config)
                 expected = seeded[s].expected_band if s in seeded else None
                 check = "" if expected is None else (" [green]✓[/]" if expected == result.band else " [red]✗[/]")
                 sig = acct.signals
@@ -159,19 +250,18 @@ def run(
     show: Annotated[bool, typer.Option(help="Print the briefing when the run finishes.")] = True,
 ) -> None:
     """Run the agent on an instruction and write a renewal briefing."""
-    settings = get_settings()
-    store = Store.open(settings.rro_db)
-    risk_config = RiskConfig.load(settings.config_dir / "risk.yaml")
+    rt = _runtime()
+    settings = rt.settings
     backends = ", ".join(f"{s}={settings.backend_for(s)}" for s in ("crm", "tickets", "usage"))
     console.print(f"[dim]{settings.anthropic_model} · effort {settings.anthropic_effort} · {backends}[/]")
 
     async def main():
-        async with _gateway(settings, store) as gateway:
-            orchestrator = Orchestrator(settings, gateway, ClaudeLLM(settings), store, risk_config)
-            return await orchestrator.run(instruction, on_event=_print_event)
+        _starting()
+        async with rt.gateway:
+            return await rt.orchestrator(ClaudeLLM(settings)).run(instruction, on_event=_print_event)
 
     result = _run_async(main)
-    if result.status != "completed":
+    if result.status == "failed":
         _fail(f"Run {result.run_id} failed: {result.error}")
 
     a = result.assessment
@@ -188,10 +278,28 @@ def run(
             f"Audit: rro audit {result.run_id}\n"
             f"[dim]{result.turns} turns · {total_in:,} input tokens ({cached / max(total_in, 1):.0%} from cache) · "
             f"{tokens.get('output_tokens', 0):,} output tokens[/]",
-            title=f"Run {result.run_id} complete",
-            border_style="green",
+            title=f"Run {result.run_id} {'awaiting approval' if result.approval_ids else 'complete'}",
+            border_style="yellow" if result.approval_ids else "green",
         )
     )
+    if result.approval_ids:
+        table = Table("Approval", "Proposal", title="Waiting for a human", title_justify="left")
+        for approval_id in result.approval_ids:
+            table.add_row(approval_id, rt.approvals.get(approval_id).summary)
+        console.print(table)
+        console.print("[dim]rro approve <ID>   ·   rro reject <ID> --note \"why\"   ·   or use the web UI: rro serve[/]")
+
+
+@app.command()
+def serve(
+    host: Annotated[str, typer.Option(help="Interface to bind. Keep it local: the UI has no login.")] = "127.0.0.1",
+    port: int = 8000,
+) -> None:
+    """Start the web UI: run the agent, review briefings, approve or reject proposals."""
+    import uvicorn
+
+    console.print(f"Renewal Risk Orchestrator on [bold]http://{host}:{port}[/]")
+    uvicorn.run("rro.web.app:app", host=host, port=port, log_level="warning")
 
 
 def _print_event(event: AgentEvent) -> None:
@@ -228,7 +336,7 @@ def _run_async(main: Any) -> Any:
         # Errors raised inside the MCP clients' task groups arrive wrapped in exception groups.
         while isinstance(exc, BaseExceptionGroup) and len(exc.exceptions) == 1:
             exc = exc.exceptions[0]
-        if isinstance(exc, GatewayConfigError):
+        if isinstance(exc, GatewayConfigError | ApprovalError):
             _fail(str(exc))
         if isinstance(exc, anthropic.AuthenticationError):
             _fail("Claude rejected the API key. Check ANTHROPIC_API_KEY in .env.")

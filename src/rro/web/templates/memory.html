@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Decision memory</h1>
+<p class="sub">Past proposals, what a human decided and why, and what happened next. The agent consults this before recommending anything; every decision made here is added automatically.</p>
+<table>
+  <thead><tr><th>Date</th><th>Account</th><th>Risk</th><th>Proposal</th><th>Decision</th><th>Outcome</th></tr></thead>
+  <tbody>
+  {% for d in decisions %}
+    <tr>
+      <td class="num">{{ d.decided_on }}</td>
+      <td>{{ d.account_name }}{% if d.source != 'seed' %}<div><a class="mono small" href="/runs/{{ d.source[4:] }}">{{ d.source }}</a></div>{% endif %}</td>
+      <td><span class="badge b-{{ d.risk_band }}">{{ d.risk_band }}</span> {{ d.risk_score }}<div class="muted small">{{ d.drivers | join(', ') }}</div></td>
+      <td>{{ d.proposal }}<div class="muted small">{{ d.action_type.replace('_', ' ') }}</div></td>
+      <td><span class="badge b-{{ d.status }}">{{ d.status }}</span> <span class="small">{{ d.approver }}</span>{% if d.note %}<div class="muted small">{{ d.note }}</div>{% endif %}</td>
+      <td>{% if d.outcome %}<span class="badge {{ 'b-healthy' if d.outcome == 'renewed' else 'b-critical' if d.outcome == 'churned' else 'b-neutral' }}">{{ d.outcome }}</span>{% endif %}{% if d.outcome_note %}<div class="muted small">{{ d.outcome_note }}</div>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

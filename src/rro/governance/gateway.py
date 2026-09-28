@@ -17,10 +17,10 @@ and never pass through this code.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sys
-from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
@@ -78,11 +78,12 @@ class CallOutcome:
 def resolve_launch(settings: Settings) -> dict[str, StdioServerParameters]:
     """Read config/servers.yaml and build the launch command for each system's chosen backend."""
     raw = yaml.safe_load((settings.config_dir / "servers.yaml").read_text(encoding="utf-8"))["systems"]
-    fill = {"{python}": sys.executable, "{mock_db}": str(settings.mock_db)}
+    fill = {"{python}": sys.executable, "{mock_db}": str(settings.mock_db), "{memory_db}": str(settings.memory_db)}
     launches: dict[str, StdioServerParameters] = {}
     for system in SYSTEMS:
         backend = settings.backend_for(system)
-        entry = (raw.get(system) or {}).get(backend)
+        system_config = raw.get(system) or {}
+        entry = system_config if "command" in system_config else system_config.get(backend)
         if entry is None:
             raise GatewayConfigError(
                 f"No '{backend}' backend is configured for '{system}' in config/servers.yaml. "
@@ -111,50 +112,69 @@ class ToolGateway:
         self.store = store
         self._clients: dict[str, Client] = {}
         self._specs: dict[str, ToolSpec] = {}
-        self._stack: AsyncExitStack | None = None
+        self._tasks: list[asyncio.Task] = []
+        self._stop = asyncio.Event()
 
     async def __aenter__(self) -> ToolGateway:
         launches = resolve_launch(self.settings)
-        if any(self.settings.backend_for(s) == "mock" for s in launches) and not self.settings.mock_db.exists():
-            raise GatewayConfigError(f"Mock data not found at {self.settings.mock_db}. Run `rro seed` first.")
+        needs_mock = any(self.settings.backend_for(s) == "mock" for s in launches)
+        for path, needed in ((self.settings.mock_db, needs_mock), (self.settings.memory_db, True)):
+            if needed and not path.exists():
+                raise GatewayConfigError(f"{path.name} not found in {path.parent}. Run `rro seed` first.")
         self.settings.logs_dir.mkdir(parents=True, exist_ok=True)
 
-        self._stack = AsyncExitStack()
-        await self._stack.__aenter__()
+        # Servers start in parallel (each is a cold Python process). Each connection lives in its
+        # own task, because an MCP client's task groups must be entered and exited in one task.
+        self._stop = asyncio.Event()
+        ready = {system: asyncio.get_running_loop().create_future() for system in launches}
+        self._tasks = [
+            asyncio.create_task(self._hold_connection(system, params, ready[system]), name=f"mcp-{system}")
+            for system, params in launches.items()
+        ]
         try:
-            for system, params in launches.items():
-                await self._connect(system, params)
+            for system, listed in zip(ready, await asyncio.gather(*ready.values()), strict=True):
+                self._register(system, listed)
         except BaseException:
-            await self._stack.aclose()
+            await self.__aexit__(None, None, None)
             raise
         return self
 
     async def __aexit__(self, *exc_info) -> None:
-        if self._stack is not None:
-            await self._stack.__aexit__(*exc_info)
+        self._stop.set()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
 
-    async def _connect(self, system: str, params: StdioServerParameters) -> None:
-        # Server stderr goes to data/logs/<system>.log rather than cluttering the terminal.
-        errlog = self._stack.enter_context(open(self.settings.logs_dir / f"{system}.log", "a", encoding="utf-8"))
-        client = Client(stdio_client(params, errlog=errlog), client_info=CLIENT_INFO)
-        await self._stack.enter_async_context(client)
-        self._clients[system] = client
+    async def _hold_connection(self, system: str, params: StdioServerParameters, ready: asyncio.Future) -> None:
+        """Connect, report the server's tools, then keep the connection open until the gateway closes."""
+        try:
+            # Server stderr goes to data/logs/<system>.log rather than cluttering the terminal.
+            with open(self.settings.logs_dir / f"{system}.log", "a", encoding="utf-8") as errlog:
+                async with Client(stdio_client(params, errlog=errlog), client_info=CLIENT_INFO) as client:
+                    self._clients[system] = client
+                    tools, cursor = [], None
+                    while True:
+                        page = await client.list_tools(cursor=cursor)
+                        tools.extend(page.tools)
+                        if not (cursor := page.next_cursor):
+                            break
+                    ready.set_result(tools)
+                    await self._stop.wait()
+        except BaseException as exc:
+            if not ready.done():
+                ready.set_exception(exc)
+            elif not isinstance(exc, asyncio.CancelledError):
+                raise
 
-        cursor = None
-        while True:
-            page = await client.list_tools(cursor=cursor)
-            for tool in page.tools:
-                spec = ToolSpec(
-                    system=system,
-                    name=tool.name,
-                    description=(tool.description or "").strip(),
-                    input_schema=tool.input_schema,
-                    scope=self.policy.scope_of(system, tool.name) or "unlisted",
-                    read_only_hint=tool.annotations.read_only_hint if tool.annotations else None,
-                )
-                self._specs[spec.qualified_name] = spec
-            if not (cursor := page.next_cursor):
-                break
+    def _register(self, system: str, tools: list) -> None:
+        for tool in tools:
+            spec = ToolSpec(
+                system=system,
+                name=tool.name,
+                description=(tool.description or "").strip(),
+                input_schema=tool.input_schema,
+                scope=self.policy.scope_of(system, tool.name) or "unlisted",
+                read_only_hint=tool.annotations.read_only_hint if tool.annotations else None,
+            )
+            self._specs[spec.qualified_name] = spec
 
     # --- what the model sees ----------------------------------------------------
     def inventory(self) -> list[ToolSpec]:

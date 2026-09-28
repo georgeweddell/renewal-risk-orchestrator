@@ -24,6 +24,7 @@ from rro.agent.llm import LLM
 from rro.agent.local_tools import LocalTools
 from rro.agent.prompts import SYSTEM_PROMPT
 from rro.db import Store
+from rro.governance.approvals import ApprovalStore
 from rro.governance.gateway import ToolGateway
 from rro.risk import RiskAssessment, RiskConfig
 from rro.settings import Settings
@@ -46,11 +47,12 @@ EventHandler = Callable[[AgentEvent], None]
 @dataclass
 class RunResult:
     run_id: str
-    status: str  # completed | failed
+    status: str  # completed | awaiting_approval | failed
     summary: str = ""
     account_slug: str | None = None
     assessment: RiskAssessment | None = None
     briefing_path: Path | None = None
+    approval_ids: list[str] = field(default_factory=list)
     error: str | None = None
     turns: int = 0
     usage: dict[str, int] = field(default_factory=dict)
@@ -61,17 +63,29 @@ class AgentError(RuntimeError):
 
 
 class Orchestrator:
-    def __init__(self, settings: Settings, gateway: ToolGateway, llm: LLM, store: Store, risk_config: RiskConfig):
+    def __init__(
+        self,
+        settings: Settings,
+        gateway: ToolGateway,
+        llm: LLM,
+        store: Store,
+        approvals: ApprovalStore,
+        risk_config: RiskConfig,
+    ):
         self.settings = settings
         self.gateway = gateway
         self.llm = llm
         self.store = store
+        self.approvals = approvals
         self.risk_config = risk_config
 
-    async def run(self, instruction: str, on_event: EventHandler | None = None) -> RunResult:
+    async def run(self, instruction: str, on_event: EventHandler | None = None, run_id: str | None = None) -> RunResult:
+        """Run the agent. Pass a run_id from Store.create_run to know the ID before the run starts (the web UI does)."""
         emit = on_event or (lambda event: None)
-        run_id = self.store.create_run(instruction, self.llm.model)
-        local = LocalTools(self.settings, self.risk_config, self.store, run_id, self.llm.model)
+        run_id = run_id or self.store.create_run(instruction, self.llm.model)
+        local = LocalTools(
+            self.settings, self.risk_config, self.store, self.gateway, self.approvals, run_id, self.llm.model
+        )
         tools = self.gateway.model_tools() + local.definitions
         today = datetime.now(UTC).date()
         # The date goes in the first user turn, not the system prompt, so the cached prefix stays identical.
@@ -119,7 +133,8 @@ class Orchestrator:
                 raise AgentError("The agent finished without writing a briefing.")
             result.account_slug, result.briefing_path = local.briefing
             result.assessment = local.assessments.get(result.account_slug)
-            result.status = "completed"
+            result.approval_ids = local.proposed
+            result.status = "awaiting_approval" if local.proposed else "completed"
         except AgentError as exc:
             result.error = str(exc)
         except BaseException as exc:

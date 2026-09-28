@@ -20,6 +20,7 @@ async def test_write_tools_are_never_shown_to_the_model(settings, store):
     assert shown == {
         "crm__search_crm_objects", "crm__get_crm_objects", "crm__search_owners",
         "tickets__list_issues", "tickets__get_issue", "usage__get_usage_trend",
+        "memory__get_account_history", "memory__find_similar_decisions",
     }  # fmt: skip
 
 

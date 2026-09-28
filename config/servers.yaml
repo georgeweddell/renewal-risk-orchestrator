@@ -2,8 +2,11 @@
 # Each system's backend comes from .env (RRO_MODE or <SYSTEM>_BACKEND).
 #
 # Placeholders filled in by the app:
-#   {python}   the current Python interpreter
-#   {mock_db}  path to the seeded mock-systems database
+#   {python}     the current Python interpreter
+#   {mock_db}    path to the seeded mock-systems database
+#   {memory_db}  path to the decision memory
+#
+# An entry with a top-level `command` runs the same way in every mode.
 #
 # `env` is the complete list of variables a server receives (on top of the
 # MCP SDK's safe defaults such as PATH). Servers never inherit the
@@ -35,3 +38,9 @@ systems:
       args: ["-m", "mcp_servers.usage"]
       env: {USAGE_BACKEND: mock, RRO_MOCK_DB: "{mock_db}"}
     # live (Phase 3): same server, USAGE_BACKEND=posthog.
+
+  memory:
+    description: "Past renewal decisions and outcomes (this app's own store)"
+    command: "{python}"
+    args: ["-m", "mcp_servers.memory"]
+    env: {RRO_MEMORY_DB: "{memory_db}"}

@@ -14,7 +14,8 @@ dist/
 data/
 output/
 
-# Editors / OS
+# Editors / OS / local tooling
+.claude/
 .vscode/
 .idea/
 .DS_Store

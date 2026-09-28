@@ -21,3 +21,12 @@ systems:
 
   usage:
     read: [get_usage_trend]
+
+  memory:
+    # Written only by the approval executor, directly; there are no memory write tools.
+    read: [get_account_history, find_similar_decisions]
+
+# Limits on what the agent may propose. Checked when a proposal is made,
+# before it ever reaches a human.
+limits:
+  pricing_exception_max_pct: 25

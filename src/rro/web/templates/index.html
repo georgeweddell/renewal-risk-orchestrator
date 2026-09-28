@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Accounts</h1>
+<p class="sub">Ask the agent to prep a renewal. It reads the CRM, support queue, usage data and decision memory, then proposes changes for a human to approve.</p>
+
+<form method="post" action="/runs" class="card row" style="margin-bottom: 24px">
+  <input type="text" name="instruction" placeholder="Prep the renewal for Halcyon Robotics" required>
+  <button class="primary" type="submit">Run agent</button>
+</form>
+
+<table>
+  <thead><tr><th>Account</th><th>ARR</th><th>Renewal in</th><th>Latest assessment</th><th>Pending</th><th></th></tr></thead>
+  <tbody>
+  {% for row in accounts %}
+    {% set a = row.account %}{% set latest = row.latest %}
+    <tr>
+      <td><strong>{{ a.name }}</strong><div class="muted small">{{ a.industry }}</div></td>
+      <td class="num">${{ "{:,}".format(a.arr) }}</td>
+      <td class="num">{{ a.renewal_in_days }} days</td>
+      <td>
+        {% if latest and latest.risk_band %}
+          <a href="/runs/{{ latest.id }}"><span class="badge b-{{ latest.risk_band }}">{{ latest.risk_band }}</span> {{ latest.risk_score }}/100</a>
+          <div class="muted small">{{ latest.started_at[:16].replace('T', ' ') }} UTC</div>
+        {% else %}<span class="muted">Not assessed yet</span>{% endif %}
+      </td>
+      <td>{% if row.pending %}<a href="/approvals"><span class="badge b-pending">{{ row.pending }} to approve</span></a>{% endif %}</td>
+      <td style="text-align: right">
+        <form method="post" action="/runs"><input type="hidden" name="instruction" value="Prep the renewal for {{ a.name }}"><button type="submit">Prep renewal</button></form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if runs %}
+<h2>Recent runs</h2>
+<table>
+  <thead><tr><th>Started (UTC)</th><th>Instruction</th><th>Status</th><th>Risk</th></tr></thead>
+  <tbody>
+  {% for r in runs %}
+    <tr>
+      <td class="num"><a href="/runs/{{ r.id }}">{{ r.started_at[:16].replace('T', ' ') }}</a></td>
+      <td>{{ r.instruction }}</td>
+      <td><span class="badge b-{{ r.status }}">{{ r.status.replace('_', ' ') }}</span></td>
+      <td>{% if r.risk_band %}<span class="badge b-{{ r.risk_band }}">{{ r.risk_band }}</span> {{ r.risk_score }}{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}
