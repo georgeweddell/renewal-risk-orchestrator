@@ -1,8 +1,22 @@
 # Renewal Risk Orchestrator
 
+[![tests](https://github.com/georgeweddell/renewal-risk-orchestrator/actions/workflows/tests.yml/badge.svg)](https://github.com/georgeweddell/renewal-risk-orchestrator/actions/workflows/tests.yml)
+![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)
+![Claude + MCP](https://img.shields.io/badge/Claude-MCP-d97757)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 **One instruction ("prep the renewal for Halcyon Robotics") and an agent works across the CRM, the support queue and product analytics to score renewal risk and brief the account team. Every tool call is permission-scoped and audited, and nothing is written to a system of record without a human approving it.**
 
 Built with Claude (Anthropic API), the Model Context Protocol (MCP), FastAPI and SQLite.
+
+## At a glance
+
+- **Four real systems, two-way.** HubSpot (reads, plus approved writes, through its REST API or HubSpot's own MCP server), GitHub Issues as the support queue, PostHog for product usage, and Slack for approvals. A mock mode tells the same story with no accounts needed.
+- **The model can't write.** It can only *propose*. A human approves the exact payload in Slack, the web UI or the CLI, and a deterministic executor makes that write once, after a hash check.
+- **Deny by default.** HubSpot's own MCP server offers 29 tools, including marketing emails and landing pages. The agent is shown 3.
+- **It learns from decisions.** A memory of past approvals, rejections and outcomes shapes each recommendation. When precedent shows discounts didn't save similar accounts, the agent argues against one.
+- **Measured, not just demoed.** An eval runs the real agent on all 8 accounts: **8/8 passed, 64/64 checks**, including exact reproduction of every source number ([report](evals/results.md)). Offline tests run in CI on every push.
+- **Explainable scoring.** Claude gathers and interprets the evidence; a deterministic engine does the arithmetic.
 
 ---
 
@@ -60,6 +74,22 @@ A renewal is a good test of whether an agent can do real cross-system work. The 
 ```
 
 **Claude decides what to look at and what to recommend. Deterministic code decides what's allowed, what gets written and what gets recorded.** The design decisions, including the MCP-specific ones, are explained in [docs/architecture.md](docs/architecture.md).
+
+## Evals
+
+`rro eval` runs the real agent on all 8 accounts, in an isolated copy of the mock data, and grades each run against ground truth computed without the LLM. Latest result: **8/8 accounts passed every check, 64/64** ([full report](evals/results.md)).
+
+| Check | What it verifies |
+|---|---|
+| `completed` | The run finished and wrote a briefing |
+| `band`, `score` | The risk band and score match `rro score` (no LLM) and the band the account was designed as |
+| `inputs` | The numbers the agent passed to the risk engine are exactly what the systems reported |
+| `briefing_sections` | Every section of the briefing format is present |
+| `cites_p1_issues` | Every open P1 issue is cited by number |
+| `crm_proposal` | Exactly one CRM risk update, on the open renewal deal, with the engine's band |
+| `discount_discipline` | No pricing exception while P1s are open, the lesson the seeded precedent teaches |
+
+A full eval is 8 agent runs, about $1 with `claude-opus-5-5` at medium effort. The grading itself has tests too, including one that plants a transcription error and a discount and checks the eval catches both.
 
 ## Quickstart (mock mode, about 2 minutes)
 
@@ -156,6 +186,7 @@ From the terminal, `rro tools` shows the policy at work (`crm.manage_crm_objects
 | `rro memory [SLUG]` | Past decisions, approvers' reasons and outcomes |
 | `rro audit [RUN_ID]` | Audit log for a run (defaults to the latest) |
 | `rro score [SLUG]` | Deterministic risk scores via the MCP servers, with no LLM |
+| `rro eval` | Run the agent on every account and grade it against ground truth (uses the Claude API) |
 | `rro reset` | Delete runs, approvals, the audit log and briefings, then reseed |
 
 ## Configuration
@@ -194,6 +225,7 @@ src/rro/
   live_seed.py     loads the demo story into HubSpot, GitHub and PostHog
   hubspot_mcp.py   OAuth for HubSpot's own MCP server (pre-registered connector, token store)
   crm_access.py    CRM calls made by code, in either CRM server's dialect
+  evals.py         the eval: agent runs graded against ground truth
   runtime.py       wires it all together for the CLI, web app and tests
   db.py            runs, approvals, append-only audit log
   cli.py           the `rro` command
@@ -203,6 +235,7 @@ src/mcp_servers/
   usage/           task-shaped usage tools; backends: mock, PostHog (HogQL)
   memory/          past renewal decisions, read-only over MCP
 tests/             unit + integration tests (real MCP servers, scripted LLM)
+evals/             latest eval report
 ```
 
 ## Tests
@@ -211,7 +244,7 @@ tests/             unit + integration tests (real MCP servers, scripted LLM)
 uv run pytest
 ```
 
-The integration tests start the real MCP servers over stdio and drive the agent loop with a scripted stand-in for Claude, so they need no API key. They check that:
+The integration tests start the real MCP servers over stdio and drive the agent loop with a scripted stand-in for Claude, so they need no API key or accounts, and [run in CI](.github/workflows/tests.yml) on every push. They check that:
 
 - all 8 accounts land in their designed bands;
 - write tools are never shown to the model, and calls to them are refused and audited;
@@ -219,7 +252,8 @@ The integration tests start the real MCP servers over stdio and drive the agent 
 - proposals are checked against the CRM (right account, open deal, discount within the policy limit);
 - rejections need a reason, land in memory, and are visible to the next run;
 - the audit log can't be edited or deleted;
-- the full loop and the web approval flow work end to end.
+- the full loop, the web approval flow and Slack approvals work end to end;
+- the live backends (HubSpot, GitHub, PostHog, HubSpot's MCP server) handle real response shapes, against canned HTTP responses.
 
 ## Roadmap
 
@@ -228,7 +262,8 @@ The integration tests start the real MCP servers over stdio and drive the agent 
 - [x] **Phase 3**: live HubSpot, GitHub Issues and PostHog backends, live seeding, mock/live parity check.
 - [x] **Phase 3b**: HubSpot's own remote MCP server as an alternative CRM backend (OAuth), under the same governance.
 - [x] **Phase 4**: Slack approvals (Socket Mode), with the Slack user recorded as approver; approved writes to HubSpot.
-- [ ] **Phase 5**: polish: demo recording, evals, CI.
+- [x] **Phase 5**: evals against ground truth, CI, README.
+- [ ] Demo video.
 
 ## License
 

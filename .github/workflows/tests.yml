@@ -1,0 +1,28 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install
+        run: uv sync --locked
+
+      # No API keys or accounts needed: the tests start the real MCP servers on
+      # seeded mock data and drive the agent loop with a scripted stand-in for Claude.
+      - name: Test
+        run: uv run pytest -q

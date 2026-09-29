@@ -382,6 +382,36 @@ def hubspot_login() -> None:
     console.print(f"[dim]Full tool schemas saved to {path.relative_to(settings.rro_home)}[/]")
 
 
+@app.command("eval")
+def eval_agent(
+    account: Annotated[list[str] | None, typer.Option("--account", "-a", help="Only these account slugs.")] = None,
+    concurrency: Annotated[int, typer.Option(help="Agent runs in parallel.")] = 4,
+) -> None:
+    """Run the agent on every seeded account (mock data, isolated) and grade it against ground truth.
+
+    Uses the Claude API: roughly $0.10-0.15 per account.
+    """
+    from rro.evals import CHECKS, run_eval, save_report
+
+    settings = get_settings()
+    console.print(f"[dim]{settings.anthropic_model} · effort {settings.anthropic_effort} · mock data in an isolated copy[/]")
+    _starting()
+
+    def progress(r) -> None:
+        marks = " ".join(("[green]✓[/]" if c.passed else "[red]✗[/]") for c in r.checks)
+        console.print(f"  {r.name:<18} {_band(r.band)} {r.score if r.score is not None else '-':>3} {marks}  [dim]{r.seconds}s[/]")
+
+    results, root = _run_async(lambda: run_eval(settings, account, concurrency, on_result=progress))
+    report = save_report(results, settings.anthropic_model, settings.anthropic_effort, settings.rro_home / "evals")
+    passed = sum(r.passed for r in results)
+    console.print(f"\n[bold]{passed}/{len(results)} accounts passed every check.[/] [dim]Checks: {', '.join(CHECKS)}[/]")
+    for r in results:
+        for c in r.checks:
+            if not c.passed:
+                console.print(f"  [red]✗[/] {r.name} · {c.name}: {c.detail}")
+    console.print(f"Report: {report.relative_to(settings.rro_home)} · run data: {root.relative_to(settings.rro_home)}")
+
+
 @app.command()
 def slack() -> None:
     """Listen for Approve/Reject clicks in Slack (Socket Mode) without the web UI. Ctrl+C to stop."""

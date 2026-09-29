@@ -27,6 +27,8 @@ class AccountSignals:
     name: str
     renewal_date: date
     signals: RiskSignals
+    renewal_deal_id: str
+    open_p1_issues: list[int]
 
 
 async def collect_signals(gateway: ToolGateway, slug: str, run_id: str | None = None) -> AccountSignals:
@@ -55,6 +57,8 @@ async def collect_signals(gateway: ToolGateway, slug: str, run_id: str | None = 
         slug=slug,
         name=company.properties["name"],
         renewal_date=renewal_date,
+        renewal_deal_id=open_deals[0].id,
+        open_p1_issues=[i["number"] for i in tickets["issues"] if i["priority"] == "P1" and i["state"] == "open"],
         signals=RiskSignals(
             usage_pct_change=usage["summary"]["pct_change"],
             open_p1=tickets["summary"]["open_p1"],

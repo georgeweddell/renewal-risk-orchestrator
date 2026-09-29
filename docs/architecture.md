@@ -104,7 +104,8 @@ Slack is one more place to ask a human, not a second approval system. A click go
 
 ## Known trade-offs
 
-- The agent passes signal values to `score_renewal_risk` itself, so a transcription error is possible. The inputs are recorded in the audit log, and the Phase 5 eval compares them with `rro score`.
+- The agent passes signal values to `score_renewal_risk` itself, so a transcription error is possible. The inputs are recorded in the audit log, and `rro eval` compares them with the ground truth from `rro score`; the latest eval found none across all 8 accounts. The alternative, having the scoring tool fetch its own inputs, is more robust but hides the cross-system work that makes the agent's reasoning visible.
+- Evals are a fixed set of 8 accounts with deterministic checks. They catch regressions in correctness and discipline. They don't grade the quality of the writing; a rubric graded by a second model would be the next step.
 - Starting the servers takes about 2.5 seconds, because each is a cold Python process. Tool calls afterwards take milliseconds.
 - Approver identity in the web UI and CLI is whatever name is typed in. Slack records the real user; a production web UI would sit behind single sign-on.
 - Slack approvals need a listener running (`rro serve` or `rro slack`). A click made while none is running gets an error from Slack, and can simply be repeated once one starts.

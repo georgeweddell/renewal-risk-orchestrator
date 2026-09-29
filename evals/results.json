@@ -1,0 +1,490 @@
+[
+  {
+    "slug": "brightwave-health",
+    "name": "Brightwave Health",
+    "expected_band": "healthy",
+    "run_id": "4172b292d968",
+    "band": "healthy",
+    "score": 5,
+    "truth_score": 5,
+    "checks": [
+      {
+        "name": "completed",
+        "passed": true,
+        "detail": "awaiting_approval"
+      },
+      {
+        "name": "band",
+        "passed": true,
+        "detail": "agent healthy, designed healthy, truth healthy"
+      },
+      {
+        "name": "score",
+        "passed": true,
+        "detail": "agent 5, truth 5"
+      },
+      {
+        "name": "inputs",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "briefing_sections",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "cites_p1_issues",
+        "passed": true,
+        "detail": "0 cited"
+      },
+      {
+        "name": "crm_proposal",
+        "passed": true,
+        "detail": "1 proposed on deal 5002"
+      },
+      {
+        "name": "discount_discipline",
+        "passed": true,
+        "detail": "no discount proposed"
+      }
+    ],
+    "turns": 8,
+    "tokens": {
+      "input_tokens": 18,
+      "output_tokens": 2877,
+      "cache_read_input_tokens": 53115,
+      "cache_creation_input_tokens": 10837
+    },
+    "seconds": 39.0,
+    "error": null,
+    "passed": true
+  },
+  {
+    "slug": "kestrel-logistics",
+    "name": "Kestrel Logistics",
+    "expected_band": "healthy",
+    "run_id": "7f4f328611d6",
+    "band": "healthy",
+    "score": 12,
+    "truth_score": 12,
+    "checks": [
+      {
+        "name": "completed",
+        "passed": true,
+        "detail": "awaiting_approval"
+      },
+      {
+        "name": "band",
+        "passed": true,
+        "detail": "agent healthy, designed healthy, truth healthy"
+      },
+      {
+        "name": "score",
+        "passed": true,
+        "detail": "agent 12, truth 12"
+      },
+      {
+        "name": "inputs",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "briefing_sections",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "cites_p1_issues",
+        "passed": true,
+        "detail": "0 cited"
+      },
+      {
+        "name": "crm_proposal",
+        "passed": true,
+        "detail": "1 proposed on deal 5004"
+      },
+      {
+        "name": "discount_discipline",
+        "passed": true,
+        "detail": "no discount proposed"
+      }
+    ],
+    "turns": 8,
+    "tokens": {
+      "input_tokens": 18,
+      "output_tokens": 3071,
+      "cache_read_input_tokens": 53329,
+      "cache_creation_input_tokens": 11956
+    },
+    "seconds": 54.1,
+    "error": null,
+    "passed": true
+  },
+  {
+    "slug": "orchard-financial",
+    "name": "Orchard Financial",
+    "expected_band": "healthy",
+    "run_id": "4316e6370251",
+    "band": "healthy",
+    "score": 5,
+    "truth_score": 5,
+    "checks": [
+      {
+        "name": "completed",
+        "passed": true,
+        "detail": "awaiting_approval"
+      },
+      {
+        "name": "band",
+        "passed": true,
+        "detail": "agent healthy, designed healthy, truth healthy"
+      },
+      {
+        "name": "score",
+        "passed": true,
+        "detail": "agent 5, truth 5"
+      },
+      {
+        "name": "inputs",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "briefing_sections",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "cites_p1_issues",
+        "passed": true,
+        "detail": "0 cited"
+      },
+      {
+        "name": "crm_proposal",
+        "passed": true,
+        "detail": "1 proposed on deal 5006"
+      },
+      {
+        "name": "discount_discipline",
+        "passed": true,
+        "detail": "no discount proposed"
+      }
+    ],
+    "turns": 8,
+    "tokens": {
+      "input_tokens": 18,
+      "output_tokens": 2812,
+      "cache_read_input_tokens": 52056,
+      "cache_creation_input_tokens": 10808
+    },
+    "seconds": 35.7,
+    "error": null,
+    "passed": true
+  },
+  {
+    "slug": "northpeak-retail",
+    "name": "Northpeak Retail",
+    "expected_band": "at-risk",
+    "run_id": "054408fa5442",
+    "band": "at-risk",
+    "score": 36,
+    "truth_score": 36,
+    "checks": [
+      {
+        "name": "completed",
+        "passed": true,
+        "detail": "awaiting_approval"
+      },
+      {
+        "name": "band",
+        "passed": true,
+        "detail": "agent at-risk, designed at-risk, truth at-risk"
+      },
+      {
+        "name": "score",
+        "passed": true,
+        "detail": "agent 36, truth 36"
+      },
+      {
+        "name": "inputs",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "briefing_sections",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "cites_p1_issues",
+        "passed": true,
+        "detail": "0 cited"
+      },
+      {
+        "name": "crm_proposal",
+        "passed": true,
+        "detail": "1 proposed on deal 5008"
+      },
+      {
+        "name": "discount_discipline",
+        "passed": true,
+        "detail": "no discount proposed"
+      }
+    ],
+    "turns": 7,
+    "tokens": {
+      "input_tokens": 16,
+      "output_tokens": 3683,
+      "cache_read_input_tokens": 48751,
+      "cache_creation_input_tokens": 13297
+    },
+    "seconds": 44.3,
+    "error": null,
+    "passed": true
+  },
+  {
+    "slug": "tidewater-media",
+    "name": "Tidewater Media",
+    "expected_band": "at-risk",
+    "run_id": "41764284f7d3",
+    "band": "at-risk",
+    "score": 42,
+    "truth_score": 42,
+    "checks": [
+      {
+        "name": "completed",
+        "passed": true,
+        "detail": "awaiting_approval"
+      },
+      {
+        "name": "band",
+        "passed": true,
+        "detail": "agent at-risk, designed at-risk, truth at-risk"
+      },
+      {
+        "name": "score",
+        "passed": true,
+        "detail": "agent 42, truth 42"
+      },
+      {
+        "name": "inputs",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "briefing_sections",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "cites_p1_issues",
+        "passed": true,
+        "detail": "1 cited"
+      },
+      {
+        "name": "crm_proposal",
+        "passed": true,
+        "detail": "1 proposed on deal 5010"
+      },
+      {
+        "name": "discount_discipline",
+        "passed": true,
+        "detail": "no discount proposed"
+      }
+    ],
+    "turns": 8,
+    "tokens": {
+      "input_tokens": 18,
+      "output_tokens": 3809,
+      "cache_read_input_tokens": 57465,
+      "cache_creation_input_tokens": 13640
+    },
+    "seconds": 48.5,
+    "error": null,
+    "passed": true
+  },
+  {
+    "slug": "granite-insurance",
+    "name": "Granite Insurance",
+    "expected_band": "at-risk",
+    "run_id": "523d79a5ba2d",
+    "band": "at-risk",
+    "score": 50,
+    "truth_score": 50,
+    "checks": [
+      {
+        "name": "completed",
+        "passed": true,
+        "detail": "awaiting_approval"
+      },
+      {
+        "name": "band",
+        "passed": true,
+        "detail": "agent at-risk, designed at-risk, truth at-risk"
+      },
+      {
+        "name": "score",
+        "passed": true,
+        "detail": "agent 50, truth 50"
+      },
+      {
+        "name": "inputs",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "briefing_sections",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "cites_p1_issues",
+        "passed": true,
+        "detail": "2 cited"
+      },
+      {
+        "name": "crm_proposal",
+        "passed": true,
+        "detail": "1 proposed on deal 5012"
+      },
+      {
+        "name": "discount_discipline",
+        "passed": true,
+        "detail": "no discount proposed"
+      }
+    ],
+    "turns": 7,
+    "tokens": {
+      "input_tokens": 16,
+      "output_tokens": 4010,
+      "cache_read_input_tokens": 49773,
+      "cache_creation_input_tokens": 13782
+    },
+    "seconds": 45.2,
+    "error": null,
+    "passed": true
+  },
+  {
+    "slug": "halcyon-robotics",
+    "name": "Halcyon Robotics",
+    "expected_band": "critical",
+    "run_id": "daeecbac4f59",
+    "band": "critical",
+    "score": 90,
+    "truth_score": 90,
+    "checks": [
+      {
+        "name": "completed",
+        "passed": true,
+        "detail": "awaiting_approval"
+      },
+      {
+        "name": "band",
+        "passed": true,
+        "detail": "agent critical, designed critical, truth critical"
+      },
+      {
+        "name": "score",
+        "passed": true,
+        "detail": "agent 90, truth 90"
+      },
+      {
+        "name": "inputs",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "briefing_sections",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "cites_p1_issues",
+        "passed": true,
+        "detail": "2 cited"
+      },
+      {
+        "name": "crm_proposal",
+        "passed": true,
+        "detail": "1 proposed on deal 5014"
+      },
+      {
+        "name": "discount_discipline",
+        "passed": true,
+        "detail": "no discount proposed"
+      }
+    ],
+    "turns": 8,
+    "tokens": {
+      "input_tokens": 18,
+      "output_tokens": 3947,
+      "cache_read_input_tokens": 59731,
+      "cache_creation_input_tokens": 14269
+    },
+    "seconds": 43.3,
+    "error": null,
+    "passed": true
+  },
+  {
+    "slug": "summit-analytics",
+    "name": "Summit Analytics",
+    "expected_band": "critical",
+    "run_id": "61b6dfe9b631",
+    "band": "critical",
+    "score": 72,
+    "truth_score": 72,
+    "checks": [
+      {
+        "name": "completed",
+        "passed": true,
+        "detail": "awaiting_approval"
+      },
+      {
+        "name": "band",
+        "passed": true,
+        "detail": "agent critical, designed critical, truth critical"
+      },
+      {
+        "name": "score",
+        "passed": true,
+        "detail": "agent 72, truth 72"
+      },
+      {
+        "name": "inputs",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "briefing_sections",
+        "passed": true,
+        "detail": ""
+      },
+      {
+        "name": "cites_p1_issues",
+        "passed": true,
+        "detail": "2 cited"
+      },
+      {
+        "name": "crm_proposal",
+        "passed": true,
+        "detail": "1 proposed on deal 5016"
+      },
+      {
+        "name": "discount_discipline",
+        "passed": true,
+        "detail": "no discount proposed"
+      }
+    ],
+    "turns": 8,
+    "tokens": {
+      "input_tokens": 18,
+      "output_tokens": 4044,
+      "cache_read_input_tokens": 60737,
+      "cache_creation_input_tokens": 14361
+    },
+    "seconds": 50.1,
+    "error": null,
+    "passed": true
+  }
+]
