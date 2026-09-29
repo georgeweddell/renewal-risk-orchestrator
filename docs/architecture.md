@@ -19,7 +19,7 @@ Claude decides **what to look at and what to recommend**. Deterministic code dec
 The model can ask for a write but can never make one. The sequence:
 
 1. **Propose.** `propose_crm_update` checks with the CRM (through the gateway, as actor `system`) that the deal exists, is open and belongs to the account. It then builds the exact `manage_crm_objects` call and stores it as a pending approval with a SHA-256 hash of `(system, tool, arguments)`. The risk level and score in that call come from the engine's assessment, not from anything the model typed. `propose_pricing_exception` does the same, and also enforces `limits.pricing_exception_max_pct` from the policy.
-2. **Decide.** A human approves or rejects the proposal in the web UI or the CLI (Slack in Phase 4). Both are audited as actor `human:<name>`. A rejection needs a reason.
+2. **Decide.** A human approves or rejects the proposal in Slack, the web UI or the CLI. Every decision is audited as actor `human:<name>`; from Slack, the name is the real Slack user and member ID. A rejection needs a reason.
 3. **Execute.** On approval, the executor (plain code, no LLM) replays the stored call through the gateway as actor `executor`, with the approval ID. The policy allows a write only if that approval is in state `approved` and the arguments hash to the stored value. After the write, the approval becomes `executed`, so it can't be replayed. A payload edited after approval fails the hash check and is refused.
 4. **Remember.** Approvals and rejections are written to the decision memory, with the approver's name and reason.
 
@@ -61,7 +61,17 @@ In testing, this changes behaviour in the ways you'd want. For Halcyon, the agen
 
 Our own `crm` server remains the default live backend: it needs only a token, and its tool shapes are fixed by this project rather than by a third party.
 
-**Why Slack approvals won't go through MCP (Phase 4).** MCP is client-initiated request and response. A human clicking "Approve" is an *inbound* event, which is a job for Slack's Bolt SDK in Socket Mode (a websocket, so no public URL is needed). Most Slack MCP servers can't send interactive buttons either.
+**Why Slack approvals don't go through MCP.** MCP is request and response started by the client. A human clicking "Approve" is an *inbound* event that starts on Slack's side, so it's handled by Slack's Bolt SDK in Socket Mode (the app opens a websocket to Slack, so no public URL is needed). Most Slack MCP servers can't send interactive buttons either.
+
+## Slack approvals
+
+Slack is one more place to ask a human, not a second approval system. A click goes to the same `ApprovalService` as the web UI and CLI, so the payload hash, one-shot executor, audit log and memory behave exactly the same.
+
+- *Posting.* When a run ends with proposals, each one is posted as a Block Kit card: proposal, reasoning, risk, the exact write with its payload hash, and Approve / Reject buttons. Approve asks for confirmation. Reject opens a form, because memory needs a reason. Posts and updates are audited (`slack.post_approval`, `slack.update_approval`).
+- *Identity.* The approver is resolved from the click (`users.info`) and recorded as "Real Name (Slack U…)". That closes the web UI's gap, where the approver is whatever name is typed. `SLACK_APPROVERS` limits decisions to named member IDs; anyone else gets a private "you're not on the approver list" reply, and nothing changes.
+- *One decision, many surfaces.* Whichever surface decides first wins; the others see an already-decided approval. The Slack card is updated after a decision made anywhere, so it never shows stale buttons.
+- *Least privilege.* The app has two bot scopes: `chat:write` (post and update cards) and `users:read` (approver names). It can't read channel history.
+- *Where it runs.* The Socket Mode listener runs inside `rro serve`, or on its own with `rro slack`. `rro run` posts its cards from the terminal; clicks are then handled by whichever listener is running.
 
 ## Live mode
 
@@ -96,5 +106,6 @@ Our own `crm` server remains the default live backend: it needs only a token, an
 
 - The agent passes signal values to `score_renewal_risk` itself, so a transcription error is possible. The inputs are recorded in the audit log, and the Phase 5 eval compares them with `rro score`.
 - Starting the servers takes about 2.5 seconds, because each is a cold Python process. Tool calls afterwards take milliseconds.
-- Approver identity in the web UI and CLI is whatever name is typed in. Real identities come with Slack in Phase 4.
+- Approver identity in the web UI and CLI is whatever name is typed in. Slack records the real user; a production web UI would sit behind single sign-on.
+- Slack approvals need a listener running (`rro serve` or `rro slack`). A click made while none is running gets an error from Slack, and can simply be repeated once one starts.
 - Memory outcomes (renewed / churned) for new decisions start as `pending`. Recording the eventual outcome is a manual step for now.

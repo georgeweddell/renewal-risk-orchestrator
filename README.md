@@ -25,8 +25,8 @@ A renewal is a good test of whether an agent can do real cross-system work. The 
 | 3. Pull the product usage trend (PostHog) | ✅ mock · ✅ live |
 | 4. Score renewal risk with explainable reasoning, and check precedent in memory | ✅ |
 | 5. Write an account team briefing (markdown) | ✅ |
-| 6. Propose a CRM risk update and a pricing exception, routed for human approval | ✅ web UI + CLI · Slack in Phase 4 |
-| 7. Write to the CRM only after approval | ✅ mock CRM · HubSpot in Phase 4 |
+| 6. Propose a CRM risk update and a pricing exception, routed for human approval | ✅ Slack, web UI or CLI |
+| 7. Write to the CRM only after approval | ✅ mock CRM · HubSpot (REST or HubSpot's own MCP server) |
 
 ## Architecture
 
@@ -46,7 +46,7 @@ A renewal is a good test of whether an agent can do real cross-system work. The 
 │   ② write tools never shown to the model                             │
 │   ③ every call → append-only audit_log (SQLite triggers block edits) │
 │  Approval gate: pending action + SHA-256 of its exact payload        │
-│   human approves (web / CLI; Slack in Phase 4) → EXECUTOR (no LLM)   │
+│   human approves (Slack / web / CLI) → EXECUTOR (no LLM)             │
 │   → write via gateway, allowed only for that approved hash, once     │
 │   → decision recorded in memory                                      │
 └──┬─────────────┬─────────────┬─────────────┬─────────────────────────┘
@@ -110,6 +110,21 @@ The CRM can also be HubSpot's official remote MCP server (`mcp.hubspot.com`) ins
 
 HubSpot's server offers 29 tools. The policy shows the agent three of them, and every write still goes through the approval gate. See `rro --live tools`.
 
+## Slack approvals
+
+Proposals can be approved or rejected from a Slack channel. Each one is posted as a card showing the proposal, its reasoning, the exact write and its payload hash, with **Approve** and **Reject…** buttons. Reject asks for a reason, because memory needs one. After a decision, from Slack, the web UI or the CLI, the card updates to show who decided and what happened.
+
+The approver recorded in the audit log and in memory is the Slack user who clicked, by real name and member ID. `SLACK_APPROVERS` can restrict decisions to named people.
+
+Setup (free workspace, about 10 minutes):
+
+1. At **api.slack.com/apps**, choose **Create New App → From a manifest** and paste [`config/slack-app-manifest.yaml`](config/slack-app-manifest.yaml). It uses bot scopes `chat:write` and `users:read`, with Socket Mode and interactivity on.
+2. Under **Basic Information → App-Level Tokens**, create a token with `connections:write` → `SLACK_APP_TOKEN` (`xapp-…`).
+3. Under **Install App**, install to your workspace and copy the Bot User OAuth Token → `SLACK_BOT_TOKEN` (`xoxb-…`).
+4. Invite the bot to your approvals channel (`/invite @Renewal Risk Orchestrator`) and put the channel ID in `SLACK_APPROVALS_CHANNEL`.
+
+Clicks arrive over Socket Mode, so no public URL is needed. The listener runs inside `rro serve`, or on its own with `rro slack`.
+
 ## The 3-minute demo
 
 Run `rro reset -y` first, then `rro serve`.
@@ -117,7 +132,7 @@ Run `rro reset -y` first, then `rro serve`.
 1. **Accounts page**: eight customers, designed as three healthy, three at-risk and two critical. Click **Prep renewal** on Halcyon Robotics.
 2. **The run page**: the trace (read straight from the audit log) shows the agent find the company, then query tickets, usage and memory in parallel. It scores the account critical, 90/100.
 3. **The briefing's Precedent section**: last year Halcyon got a 15% discount and usage fell anyway. A similar account churned despite a discount; another renewed at full price once its P1s were fixed. So the agent proposes the CRM risk update and *argues against* a discount.
-4. **Approve the proposal**: open "Exact write the executor will make" to see the payload and its hash, then approve. The executor, not the model, writes it to the CRM.
+4. **Approve the proposal in Slack**: the card shows the payload and its hash. Click Approve, and the card updates with your name as the executor writes to the CRM. (The same card is in the web UI's Approvals page.)
 5. **Audit log**: the human decision and the executor's write, each tied to the approval ID. Try editing a row in SQLite: the database refuses.
 6. **Optional second act**: prep Summit Analytics, reject the proposal with a reason, and run it again. The agent reads the rejection from memory and won't re-propose until the reason no longer applies.
 
@@ -131,6 +146,7 @@ From the terminal, `rro tools` shows the policy at work (`crm.manage_crm_objects
 | `rro seed-live` | Load the same story into HubSpot (test account only), GitHub Issues and PostHog |
 | `rro --live <command>` | Run any command against the live systems instead of mock data |
 | `rro hubspot-login` | One-off browser sign-in to HubSpot's own MCP server, then list its tools |
+| `rro slack` | Listen for Approve/Reject clicks in Slack without the web UI (`rro serve` includes it) |
 | `rro accounts` | List the demo accounts |
 | `rro tools` | Tool inventory: policy scope, whether the agent sees it, and what the server claims about itself |
 | `rro run "<instruction>"` | Run the agent: briefing plus proposals for approval |
@@ -172,6 +188,7 @@ src/rro/
   agent/           Claude tool-use loop, system prompt, local tools (score, propose, brief)
   governance/      policy, Tool Gateway (MCP client host, audit), approval gate + executor
   web/             FastAPI + Jinja web UI
+  notify/          Slack approval cards and the Socket Mode listener
   risk.py          deterministic scoring engine
   signals.py       LLM-free signal collection (ground truth)
   live_seed.py     loads the demo story into HubSpot, GitHub and PostHog
@@ -210,7 +227,7 @@ The integration tests start the real MCP servers over stdio and drive the agent 
 - [x] **Phase 2**: decision memory, proposals, approval gate + executor, web UI.
 - [x] **Phase 3**: live HubSpot, GitHub Issues and PostHog backends, live seeding, mock/live parity check.
 - [x] **Phase 3b**: HubSpot's own remote MCP server as an alternative CRM backend (OAuth), under the same governance.
-- [ ] **Phase 4**: Slack approvals (Socket Mode) and approved writes to HubSpot.
+- [x] **Phase 4**: Slack approvals (Socket Mode), with the Slack user recorded as approver; approved writes to HubSpot.
 - [ ] **Phase 5**: polish: demo recording, evals, CI.
 
 ## License

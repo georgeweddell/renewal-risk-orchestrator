@@ -1,0 +1,22 @@
+# Slack app manifest: api.slack.com/apps -> Create New App -> From a manifest.
+# Two bot scopes only: post/update approval cards, and look up the approver's name.
+# Socket Mode delivers button clicks over a websocket the app opens, so no public URL is needed.
+display_information:
+  name: Renewal Risk Orchestrator
+  description: Human approval gate for renewal-risk CRM changes
+  background_color: "#1d1d1b"
+features:
+  bot_user:
+    display_name: Renewal Risk Orchestrator
+    always_online: false
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - users:read
+settings:
+  interactivity:
+    is_enabled: true
+  socket_mode_enabled: true
+  org_deploy_enabled: false
+  token_rotation_enabled: false

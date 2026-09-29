@@ -38,10 +38,17 @@ async def lifespan(app: FastAPI):
     app.state.rt = rt
     app.state.tasks = set()
     async with rt.gateway:
-        yield
-        for task in app.state.tasks:  # stop any runs still going before the MCP servers shut down
-            task.cancel()
-        await asyncio.gather(*app.state.tasks, return_exceptions=True)
+        listener = rt.slack_listener()  # Approve/Reject clicks from Slack, if configured
+        if listener:
+            await listener.start()
+        try:
+            yield
+        finally:
+            if listener:
+                await listener.stop()
+            for task in app.state.tasks:  # stop any runs still going before the MCP servers shut down
+                task.cancel()
+            await asyncio.gather(*app.state.tasks, return_exceptions=True)
 
 
 app = FastAPI(title="Renewal Risk Orchestrator", lifespan=lifespan)
@@ -95,7 +102,9 @@ async def start_run(request: Request, instruction: str = Form(...)):
 
 async def _run_in_background(rt: Runtime, llm: ClaudeLLM, instruction: str, run_id: str) -> None:
     try:
-        await rt.orchestrator(llm).run(instruction, run_id=run_id)
+        result = await rt.orchestrator(llm).run(instruction, run_id=run_id)
+        if result.approval_ids:
+            await rt.announce(run_id)
     except Exception:
         pass  # the orchestrator has already recorded the failure on the run, which the run page shows
 
@@ -171,6 +180,7 @@ async def decide(
             raise HTTPException(400, "Unknown action")
     except ApprovalError as exc:
         raise HTTPException(400, str(exc)) from exc
+    await _rt(request).reflect_decision(approval_id)
     # Only redirect within this app.
     response = RedirectResponse(next_url if next_url.startswith("/") and not next_url.startswith("//") else "/approvals", status_code=303)
     response.set_cookie(APPROVER_COOKIE, approver, samesite="strict")

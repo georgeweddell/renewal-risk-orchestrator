@@ -71,7 +71,9 @@ CREATE TABLE IF NOT EXISTS approvals (
     decided_at     TEXT,
     decision_note  TEXT,
     executed_at    TEXT,
-    result_text    TEXT
+    result_text    TEXT,
+    slack_channel  TEXT,                   -- where the approval card was posted, if Slack is on
+    slack_ts       TEXT
 );
 
 CREATE TRIGGER IF NOT EXISTS audit_log_no_update BEFORE UPDATE ON audit_log
@@ -91,7 +93,16 @@ def connect(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(path, isolation_level=None)  # autocommit
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Add columns introduced after a database was first created."""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(approvals)")}
+    for name in ("slack_channel", "slack_ts"):
+        if name not in columns:
+            conn.execute(f"ALTER TABLE approvals ADD COLUMN {name} TEXT")
 
 
 @dataclass

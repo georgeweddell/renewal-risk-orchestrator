@@ -230,7 +230,9 @@ def approve(
     async def main() -> Approval:
         _starting()
         async with rt.gateway:
-            return await rt.approval_service().approve(approval_id, by=approver, note=note)
+            approval = await rt.approval_service().approve(approval_id, by=approver, note=note)
+            await rt.reflect_decision(approval_id)
+            return approval
 
     result = _run_async(main)
     _print_decision(result)
@@ -248,6 +250,8 @@ def reject(
         result = rt.approval_service().reject(approval_id, by=by or rt.settings.rro_approver_name, note=note)
     except ApprovalError as exc:
         _fail(str(exc))
+    if rt.notifier:
+        asyncio.run(rt.reflect_decision(approval_id))
     _print_decision(result)
 
 
@@ -306,9 +310,11 @@ def run(
     async def main():
         _starting()
         async with rt.gateway:
-            return await rt.orchestrator(ClaudeLLM(settings)).run(instruction, on_event=_print_event)
+            result = await rt.orchestrator(ClaudeLLM(settings)).run(instruction, on_event=_print_event)
+            posted = await rt.announce(result.run_id) if result.approval_ids else []
+            return result, posted
 
-    result = _run_async(main)
+    result, posted = _run_async(main)
     if result.status == "failed":
         _fail(f"Run {result.run_id} failed: {result.error}")
 
@@ -335,6 +341,8 @@ def run(
         for approval_id in result.approval_ids:
             table.add_row(approval_id, rt.approvals.get(approval_id).summary)
         console.print(table)
+        if posted:
+            console.print(f"[green]Posted {len(posted)} approval request(s) to Slack.[/] Decisions there need a listener running: rro serve, or rro slack.")
         console.print("[dim]rro approve <ID>   ·   rro reject <ID> --note \"why\"   ·   or use the web UI: rro serve[/]")
 
 
@@ -372,6 +380,31 @@ def hubspot_login() -> None:
         table.add_row(t.name, hint, _truncate((t.description or "").split("\n")[0], 90))
     console.print(table)
     console.print(f"[dim]Full tool schemas saved to {path.relative_to(settings.rro_home)}[/]")
+
+
+@app.command()
+def slack() -> None:
+    """Listen for Approve/Reject clicks in Slack (Socket Mode) without the web UI. Ctrl+C to stop."""
+    rt = _runtime()
+    listener = rt.slack_listener()
+    if listener is None:
+        _fail("Slack isn't configured: set SLACK_BOT_TOKEN, SLACK_APP_TOKEN and SLACK_APPROVALS_CHANNEL in .env.")
+
+    async def main() -> None:
+        _starting()
+        async with rt.gateway:
+            await listener.start()
+            pending = [a for a in rt.approvals.list(status="pending") if a.slack_ts]
+            console.print(f"[green]Listening to Slack[/] ({len(pending)} approval card(s) waiting). Ctrl+C to stop.")
+            try:
+                await asyncio.Event().wait()
+            finally:
+                await listener.stop()
+
+    try:
+        _run_async(main)
+    except KeyboardInterrupt:
+        console.print("Stopped.")
 
 
 @app.command()

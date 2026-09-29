@@ -57,6 +57,8 @@ class Approval:
     decision_note: str | None
     executed_at: str | None
     result_text: str | None
+    slack_channel: str | None = None
+    slack_ts: str | None = None
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> Approval:
@@ -123,6 +125,9 @@ class ApprovalStore:
         """The policy hook: is there a human-approved, not-yet-executed action for exactly this call?"""
         row = self.conn.execute("SELECT status, payload_hash FROM approvals WHERE id=?", (approval_id,)).fetchone()
         return row is not None and row["status"] == "approved" and row["payload_hash"] == payload_hash(system, tool, args)
+
+    def set_slack_message(self, approval_id: str, channel: str, ts: str) -> None:
+        self._update(approval_id, slack_channel=channel, slack_ts=ts)
 
     def _update(self, approval_id: str, **fields: Any) -> None:
         assignments = ", ".join(f"{k}=?" for k in fields)

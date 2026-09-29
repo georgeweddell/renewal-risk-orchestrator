@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     tickets_backend: Backend | None = None
     usage_backend: Backend | None = None
     rro_max_agent_turns: int = 25
-    # Name recorded against approvals made from the web UI or CLI (Slack supplies real identities in Phase 4).
+    # Name recorded against approvals made from the web UI or CLI (Slack records the real Slack user).
     rro_approver_name: str = "Demo approver"
 
     # Live systems. Passed only to the MCP server that needs each one; see config/servers.yaml.
@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     posthog_project_api_key: SecretStr | None = None
     posthog_personal_api_key: SecretStr | None = None
 
+    # Slack approvals: requests are posted to a channel; decisions come back over Socket Mode.
+    slack_bot_token: SecretStr | None = None
+    slack_app_token: SecretStr | None = None
+    slack_approvals_channel: str | None = None
+    slack_approvers: str = ""  # comma-separated Slack member IDs; empty = anyone in the channel
+    # Where the web UI is reachable, for "read the briefing" links in Slack.
+    rro_base_url: str = "http://127.0.0.1:8000"
+
     # Locations (override for tests)
     rro_home: Path = PROJECT_ROOT
 
@@ -60,6 +68,14 @@ class Settings(BaseSettings):
         if isinstance(value, SecretStr):
             value = value.get_secret_value()
         return str(value) if value not in (None, "") else None
+
+    @property
+    def slack_enabled(self) -> bool:
+        return bool(self.slack_bot_token and self.slack_approvals_channel)
+
+    @property
+    def slack_approver_ids(self) -> set[str]:
+        return {u.strip() for u in self.slack_approvers.split(",") if u.strip()}
 
     @property
     def posthog_ingest_host(self) -> str:

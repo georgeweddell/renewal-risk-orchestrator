@@ -9,6 +9,7 @@ license = "MIT"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "aiohttp>=3.14.3",
     "anthropic",
     "fastapi>=0.141.1",
     "httpx>=0.28.1",
@@ -20,6 +21,8 @@ dependencies = [
     "python-multipart>=0.0.32",
     "pyyaml",
     "rich",
+    "slack-bolt>=1.30.0",
+    "slack-sdk>=3.44.1",
     "typer",
     "uvicorn>=0.54.0",
 ]
