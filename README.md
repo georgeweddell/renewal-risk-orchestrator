@@ -9,6 +9,8 @@
 
 Built with Claude (Anthropic API), the Model Context Protocol (MCP), FastAPI and SQLite.
 
+![Demo: one instruction, a run across four systems, a briefing that argues against a discount, a Slack approval, and the CRM updated](docs/demo.gif)
+
 ## At a glance
 
 - **Four real systems, two-way.** HubSpot (reads, plus approved writes, through its REST API or HubSpot's own MCP server), GitHub Issues as the support queue, PostHog for product usage, and Slack for approvals. A mock mode tells the same story with no accounts needed.
