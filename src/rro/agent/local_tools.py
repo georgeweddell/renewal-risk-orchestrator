@@ -20,6 +20,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from rro.crm_access import CrmAccess, CrmError, is_open
 from rro.db import AuditEntry, Store
 from rro.governance.approvals import ApprovalStore
 from rro.governance.gateway import ToolGateway
@@ -27,8 +28,6 @@ from rro.risk import RiskAssessment, RiskConfig, RiskSignals, days_until, score
 from rro.settings import Settings
 
 SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
-CLOSED_STAGES = {"closedwon", "closedlost"}
-CRM_WRITE = ("crm", "manage_crm_objects")
 
 SCORE_TOOL = {
     "name": "score_renewal_risk",
@@ -151,6 +150,7 @@ class LocalTools:
         self.approvals = approvals
         self.run_id = run_id
         self.model = model
+        self.crm = CrmAccess(gateway, run_id=run_id)
         self.assessments: dict[str, RiskAssessment] = {}
         self.proposed: list[str] = []  # approval IDs created in this run
         self.briefing: tuple[str, Path] | None = None  # (account_slug, path)
@@ -202,20 +202,20 @@ class LocalTools:
         if not reason or len(reason) > 300:
             raise ToolInputError("reason must be between 1 and 300 characters")
         deal = await self._renewal_deal(slug, args["deal_id"])
-        write_args = {
-            "objectType": "deals",
-            "objectId": deal["id"],
-            "properties": {
+        write = self.crm.update_call(
+            "deals",
+            deal["id"],
+            {
                 "renewal_risk_level": assessment.band,
                 "renewal_risk_score": str(assessment.score),
                 "renewal_risk_reason": reason,
             },
-        }
+        )
         summary = (
             f"Set renewal risk on {deal['name']} (deal {deal['id']}): "
             f"level {assessment.band}, score {assessment.score}. Reason: {reason}"
         )
-        return self._queue("crm_risk_update", slug, deal, write_args, summary, reason, assessment)
+        return self._queue("crm_risk_update", slug, deal, write, summary, reason, assessment)
 
     async def _propose_pricing_exception(self, args: dict[str, Any]) -> str:
         slug, assessment = self._scored(args["account_slug"])
@@ -227,24 +227,24 @@ class LocalTools:
         if not rationale:
             raise ToolInputError("a pricing exception needs a rationale")
         deal = await self._renewal_deal(slug, args["deal_id"])
-        write_args = {
-            "objectType": "deals",
-            "objectId": deal["id"],
-            "properties": {
+        write = self.crm.update_call(
+            "deals",
+            deal["id"],
+            {
                 "pricing_exception_pct": f"{pct:g}",
                 "pricing_exception_status": "approved",
                 "pricing_exception_rationale": rationale[:1000],
                 "pricing_exception_conditions": conditions[:500],
             },
-        }
+        )
         summary = f"{pct:g}% pricing exception on {deal['name']} (deal {deal['id']}). Conditions: {conditions or 'none'}"
-        return self._queue("pricing_exception", slug, deal, write_args, summary, rationale, assessment)
+        return self._queue("pricing_exception", slug, deal, write, summary, rationale, assessment)
 
-    def _queue(self, action_type, slug, deal, write_args, summary, rationale, assessment) -> str:
+    def _queue(self, action_type, slug, deal, write, summary, rationale, assessment) -> str:
         for existing in self.approvals.list(run_id=self.run_id, status="pending"):
-            if existing.action_type == action_type and existing.args["objectId"] == deal["id"]:
+            if existing.action_type == action_type and existing.account_slug == slug:
                 raise ToolInputError(f"Already proposed in this run as {existing.id}")
-        system, tool = CRM_WRITE
+        system, tool, write_args = write
         approval = self.approvals.create(
             run_id=self.run_id, account_slug=slug, account_name=deal["company"], action_type=action_type,
             system=system, tool=tool, args=write_args, summary=summary, rationale=rationale, assessment=assessment,
@@ -260,31 +260,23 @@ class LocalTools:
 
     async def _renewal_deal(self, slug: str, deal_id: str) -> dict[str, str]:
         """Check with the CRM that the deal exists, is open, and belongs to this account."""
-
-        async def crm(tool: str, args: dict) -> dict:
-            outcome = await self.gateway.call(tool, args, run_id=self.run_id, actor="system")
-            if outcome.is_error:
-                raise ToolInputError(f"Couldn't verify deal {deal_id} in the CRM: {outcome.text}")
-            return json.loads(outcome.text)
-
-        deals = await crm(
-            "crm__get_crm_objects",
-            {"objectType": "deals", "objectIds": [deal_id], "properties": ["dealname", "dealstage"], "associations": ["companies"]},
-        )
-        if not deals["results"]:
-            raise ToolInputError(f"Deal {deal_id} doesn't exist in the CRM")
-        deal = deals["results"][0]
-        if deal["properties"]["dealstage"] in CLOSED_STAGES:
-            raise ToolInputError(f"Deal {deal_id} is closed ({deal['properties']['dealstage']}); propose on the open renewal deal")
-        company_ids = deal.get("associations", {}).get("companies", [])
-        companies = await crm(
-            "crm__get_crm_objects",
-            {"objectType": "companies", "objectIds": company_ids or ["-"], "properties": ["name", "account_slug"]},
-        )
-        company = next((c for c in companies["results"] if c["properties"]["account_slug"] == slug), None)
-        if company is None:
-            raise ToolInputError(f"Deal {deal_id} doesn't belong to account '{slug}'")
-        return {"id": deal["id"], "name": deal["properties"]["dealname"], "company": company["properties"]["name"]}
+        deal_id = str(deal_id).strip()
+        try:
+            company = await self.crm.company_by_slug(slug, ["name", "account_slug"])
+            if company is None:
+                raise ToolInputError(f"No company in the CRM has account_slug '{slug}'")
+            deals = {d.id: d for d in await self.crm.deals_for_company(company.id, ["dealname", "dealstage"])}
+            deal = deals.get(deal_id)
+            if deal is None:
+                exists = await self.crm.deal(deal_id, ["dealname"])
+                raise ToolInputError(
+                    f"Deal {deal_id} doesn't belong to account '{slug}'" if exists else f"Deal {deal_id} doesn't exist in the CRM"
+                )
+        except CrmError as exc:
+            raise ToolInputError(f"Couldn't verify deal {deal_id} in the CRM: {exc}") from exc
+        if not is_open(deal):
+            raise ToolInputError(f"Deal {deal_id} is closed ({deal.properties['dealstage']}); propose on the open renewal deal")
+        return {"id": deal.id, "name": deal.properties["dealname"], "company": company.properties["name"]}
 
     # --- briefing -----------------------------------------------------------------
     async def _write_briefing(self, args: dict[str, Any]) -> str:

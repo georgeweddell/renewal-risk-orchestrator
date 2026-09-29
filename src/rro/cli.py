@@ -338,6 +338,42 @@ def run(
         console.print("[dim]rro approve <ID>   ·   rro reject <ID> --note \"why\"   ·   or use the web UI: rro serve[/]")
 
 
+@app.command("hubspot-login")
+def hubspot_login() -> None:
+    """Sign in to HubSpot's own MCP server once (browser), then list the tools it offers."""
+    from mcp import Client
+    from mcp.client.streamable_http import streamable_http_client
+
+    from rro import hubspot_mcp
+
+    settings = get_settings()
+
+    async def main():
+        http = hubspot_mcp.http_client(settings, interactive=True)
+        async with http, Client(streamable_http_client(hubspot_mcp.SERVER_URL, http_client=http)) as client:
+            tools = (await client.list_tools()).tools
+            who = None
+            if any(t.name == "get_user_details" for t in tools):
+                result = await client.call_tool("get_user_details", {})
+                who = "\n".join(getattr(c, "text", "") for c in result.content)[:600]
+            return tools, who
+
+    try:
+        tools, who = asyncio.run(main())
+    except hubspot_mcp.HubSpotLoginRequired as exc:
+        _fail(str(exc))
+    path = hubspot_mcp.save_tool_inventory(settings, tools)
+    console.print(f"[green]Signed in.[/] Token saved to {hubspot_mcp.token_path(settings).relative_to(settings.rro_home)} (gitignored).")
+    if who:
+        console.print(Panel(who, title="Connected as", border_style="dim"))
+    table = Table("HubSpot MCP tool", "Server says", "Description")
+    for t in tools:
+        hint = {True: "read-only", False: "writes", None: "-"}[t.annotations.read_only_hint if t.annotations else None]
+        table.add_row(t.name, hint, _truncate((t.description or "").split("\n")[0], 90))
+    console.print(table)
+    console.print(f"[dim]Full tool schemas saved to {path.relative_to(settings.rro_home)}[/]")
+
+
 @app.command()
 def serve(
     host: Annotated[str, typer.Option(help="Interface to bind. Keep it local: the UI has no login.")] = "127.0.0.1",
@@ -385,6 +421,8 @@ def _run_async(main: Any) -> Any:
         while isinstance(exc, BaseExceptionGroup) and len(exc.exceptions) == 1:
             exc = exc.exceptions[0]
         if isinstance(exc, GatewayConfigError | ApprovalError):
+            _fail(str(exc))
+        if type(exc).__name__ == "HubSpotLoginRequired":
             _fail(str(exc))
         if isinstance(exc, anthropic.AuthenticationError):
             _fail("Claude rejected the API key. Check ANTHROPIC_API_KEY in .env.")

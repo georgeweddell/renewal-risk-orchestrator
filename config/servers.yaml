@@ -25,6 +25,16 @@ systems:
       command: "{python}"
       args: ["-m", "mcp_servers.crm"]
       env: {CRM_BACKEND: hubspot, HUBSPOT_ACCESS_TOKEN: "${HUBSPOT_ACCESS_TOKEN}"}
+    hubspot_mcp:
+      # HubSpot's own remote MCP server (CRM_BACKEND=hubspot_mcp). OAuth 2.1 + PKCE
+      # with the MCP connector in .env; run `rro hubspot-login` once.
+      url: https://mcp.hubspot.com
+      auth: hubspot_oauth
+      # HubSpot's tools accept an optional `chatInsights` field that reports the
+      # user's intent back to HubSpot. Whether to share that is a policy decision,
+      # not the model's: the gateway removes it from the schemas the model sees
+      # and from every call.
+      strip_arguments: [chatInsights]
 
   tickets:
     description: "Support tickets (GitHub Issues as a stand-in)"

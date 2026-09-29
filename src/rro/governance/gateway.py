@@ -22,6 +22,7 @@ import json
 import os
 import re
 import sys
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
@@ -29,6 +30,7 @@ from typing import Any
 import yaml
 from mcp import Client
 from mcp.client.stdio import StdioServerParameters, stdio_client
+from mcp.client.streamable_http import streamable_http_client
 from mcp_types import CallToolResult, Implementation, TextContent
 
 from rro.db import AuditEntry, Store
@@ -70,17 +72,24 @@ class ToolSpec:
 
 
 @dataclass(frozen=True)
+class RemoteServer:
+    """An MCP server reached over Streamable HTTP rather than launched as a subprocess."""
+
+    url: str
+    auth: str | None = None  # "hubspot_oauth" is the only scheme so far
+
+
+@dataclass(frozen=True)
 class CallOutcome:
     text: str
     is_error: bool
     decision: Decision
 
 
-def resolve_launch(settings: Settings) -> dict[str, StdioServerParameters]:
-    """Read config/servers.yaml and build the launch command for each system's chosen backend."""
+def _server_entries(settings: Settings) -> dict[str, dict]:
+    """The config/servers.yaml entry for each system's chosen backend."""
     raw = yaml.safe_load((settings.config_dir / "servers.yaml").read_text(encoding="utf-8"))["systems"]
-    fill = {"{python}": sys.executable, "{mock_db}": str(settings.mock_db), "{memory_db}": str(settings.memory_db)}
-    launches: dict[str, StdioServerParameters] = {}
+    entries = {}
     for system in SYSTEMS:
         backend = settings.backend_for(system)
         system_config = raw.get(system) or {}
@@ -90,6 +99,18 @@ def resolve_launch(settings: Settings) -> dict[str, StdioServerParameters]:
                 f"No '{backend}' backend is configured for '{system}' in config/servers.yaml. "
                 f"Set {system.upper()}_BACKEND=mock, or add a '{backend}' entry."
             )
+        entries[system] = entry
+    return entries
+
+
+def resolve_launch(settings: Settings) -> dict[str, StdioServerParameters | RemoteServer]:
+    """Build the launch command (or remote URL) for each system's chosen backend."""
+    fill = {"{python}": sys.executable, "{mock_db}": str(settings.mock_db), "{memory_db}": str(settings.memory_db)}
+    launches: dict[str, StdioServerParameters | RemoteServer] = {}
+    for system, entry in _server_entries(settings).items():
+        if "url" in entry:
+            launches[system] = RemoteServer(url=entry["url"], auth=entry.get("auth"))
+            continue
         expand = lambda value: _expand(str(value), fill, settings, system)  # noqa: E731
         launches[system] = StdioServerParameters(
             command=expand(entry["command"]),
@@ -124,9 +145,12 @@ class ToolGateway:
         self._specs: dict[str, ToolSpec] = {}
         self._tasks: list[asyncio.Task] = []
         self._stop = asyncio.Event()
+        self._stripped: dict[str, set[str]] = {}
 
     async def __aenter__(self) -> ToolGateway:
         launches = resolve_launch(self.settings)
+        # Arguments a server accepts but the policy never lets through (see strip_arguments in servers.yaml).
+        self._stripped = {s: set(e.get("strip_arguments") or []) for s, e in _server_entries(self.settings).items()}
         needs_mock = any(self.settings.backend_for(s) == "mock" for s in launches)
         for path, needed in ((self.settings.mock_db, needs_mock), (self.settings.memory_db, True)):
             if needed and not path.exists():
@@ -153,21 +177,33 @@ class ToolGateway:
         self._stop.set()
         await asyncio.gather(*self._tasks, return_exceptions=True)
 
-    async def _hold_connection(self, system: str, params: StdioServerParameters, ready: asyncio.Future) -> None:
+    async def _hold_connection(
+        self, system: str, params: StdioServerParameters | RemoteServer, ready: asyncio.Future
+    ) -> None:
         """Connect, report the server's tools, then keep the connection open until the gateway closes."""
         try:
-            # Server stderr goes to data/logs/<system>.log rather than cluttering the terminal.
-            with open(self.settings.logs_dir / f"{system}.log", "a", encoding="utf-8") as errlog:
-                async with Client(stdio_client(params, errlog=errlog), client_info=CLIENT_INFO) as client:
-                    self._clients[system] = client
-                    tools, cursor = [], None
-                    while True:
-                        page = await client.list_tools(cursor=cursor)
-                        tools.extend(page.tools)
-                        if not (cursor := page.next_cursor):
-                            break
-                    ready.set_result(tools)
-                    await self._stop.wait()
+            async with AsyncExitStack() as stack:
+                if isinstance(params, RemoteServer):
+                    http = None
+                    if params.auth == "hubspot_oauth":
+                        from rro import hubspot_mcp  # only needed when HubSpot's own server is configured
+
+                        http = await stack.enter_async_context(hubspot_mcp.http_client(self.settings))
+                    transport = streamable_http_client(params.url, http_client=http)
+                else:
+                    # Server stderr goes to data/logs/<system>.log rather than cluttering the terminal.
+                    errlog = stack.enter_context(open(self.settings.logs_dir / f"{system}.log", "a", encoding="utf-8"))
+                    transport = stdio_client(params, errlog=errlog)
+                client = await stack.enter_async_context(Client(transport, client_info=CLIENT_INFO))
+                self._clients[system] = client
+                tools, cursor = [], None
+                while True:
+                    page = await client.list_tools(cursor=cursor)
+                    tools.extend(page.tools)
+                    if not (cursor := page.next_cursor):
+                        break
+                ready.set_result(tools)
+                await self._stop.wait()
         except BaseException as exc:
             if not ready.done():
                 ready.set_exception(exc)
@@ -180,7 +216,7 @@ class ToolGateway:
                 system=system,
                 name=tool.name,
                 description=(tool.description or "").strip(),
-                input_schema=tool.input_schema,
+                input_schema=_without(tool.input_schema, self._stripped.get(system, set())),
                 scope=self.policy.scope_of(system, tool.name) or "unlisted",
                 read_only_hint=tool.annotations.read_only_hint if tool.annotations else None,
             )
@@ -214,6 +250,10 @@ class ToolGateway:
     ) -> CallOutcome:
         spec = self._specs.get(qualified_name)
         system, _, tool = qualified_name.partition(SEP)
+        # Arguments the policy never forwards are removed before anything else, even if sent.
+        removed = sorted(set(args) & self._stripped.get(system, set()))
+        if removed:
+            args = {k: v for k, v in args.items() if k not in removed}
         if spec is None:
             decision = Decision(False, "unlisted", f"no tool named '{qualified_name}' on any connected server")
         else:
@@ -222,7 +262,8 @@ class ToolGateway:
         entry = AuditEntry(
             run_id=run_id, actor=actor, system=system or "unknown", tool=tool or qualified_name,
             scope=decision.scope, decision="allowed" if decision.allowed else "denied",
-            reason=decision.reason, args=args, approval_id=approval_id,
+            reason=decision.reason + (f"; removed {', '.join(removed)} (never forwarded)" if removed else ""),
+            args=args, approval_id=approval_id,
         )  # fmt: skip
 
         if not decision.allowed:
@@ -250,3 +291,13 @@ def _render(result: CallToolResult) -> str:
     if result.structured_content is not None:
         return json.dumps(result.structured_content)
     return "(no content)"
+
+
+def _without(schema: dict[str, Any], names: set[str]) -> dict[str, Any]:
+    """A tool's input schema minus stripped arguments, so the model never sees them."""
+    if not names or "properties" not in schema:
+        return schema
+    return schema | {
+        "properties": {k: v for k, v in schema["properties"].items() if k not in names},
+        "required": [r for r in schema.get("required", []) if r not in names],
+    }

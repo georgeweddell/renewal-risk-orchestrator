@@ -100,6 +100,16 @@ uv run rro --live serve      # or: rro --live run "Prep the renewal for Halcyon 
 
 `seed-live` only writes to a HubSpot developer test account or sandbox, and is safe to re-run. Each system can also be switched on its own, e.g. `CRM_BACKEND=live` with everything else on mock data.
 
+### Using HubSpot's own MCP server
+
+The CRM can also be HubSpot's official remote MCP server (`mcp.hubspot.com`) instead of this project's `crm` server:
+
+1. In your HubSpot developer account: **Development → MCP Connectors → Create MCP connector**, with redirect URL `http://localhost:8912/oauth/callback`. Put its client ID and secret in `.env` (`HUBSPOT_MCP_CLIENT_ID`, `HUBSPOT_MCP_CLIENT_SECRET`).
+2. `uv run rro hubspot-login`: a one-off browser sign-in (OAuth 2.1 + PKCE). Choose your test account. The token is stored in `data/` and refreshes itself.
+3. Set `CRM_BACKEND=hubspot_mcp` and use `--live` as usual.
+
+HubSpot's server offers 29 tools. The policy shows the agent three of them, and every write still goes through the approval gate. See `rro --live tools`.
+
 ## The 3-minute demo
 
 Run `rro reset -y` first, then `rro serve`.
@@ -120,6 +130,7 @@ From the terminal, `rro tools` shows the policy at work (`crm.manage_crm_objects
 | `rro seed` | Rebuild the mock systems and memory from `seed/` (dates are relative to today) |
 | `rro seed-live` | Load the same story into HubSpot (test account only), GitHub Issues and PostHog |
 | `rro --live <command>` | Run any command against the live systems instead of mock data |
+| `rro hubspot-login` | One-off browser sign-in to HubSpot's own MCP server, then list its tools |
 | `rro accounts` | List the demo accounts |
 | `rro tools` | Tool inventory: policy scope, whether the agent sees it, and what the server claims about itself |
 | `rro run "<instruction>"` | Run the agent: briefing plus proposals for approval |
@@ -164,6 +175,8 @@ src/rro/
   risk.py          deterministic scoring engine
   signals.py       LLM-free signal collection (ground truth)
   live_seed.py     loads the demo story into HubSpot, GitHub and PostHog
+  hubspot_mcp.py   OAuth for HubSpot's own MCP server (pre-registered connector, token store)
+  crm_access.py    CRM calls made by code, in either CRM server's dialect
   runtime.py       wires it all together for the CLI, web app and tests
   db.py            runs, approvals, append-only audit log
   cli.py           the `rro` command
@@ -196,7 +209,7 @@ The integration tests start the real MCP servers over stdio and drive the agent 
 - [x] **Phase 1**: mock mode end to end: seeded data, read-only MCP tools, governance gateway, risk score, briefing.
 - [x] **Phase 2**: decision memory, proposals, approval gate + executor, web UI.
 - [x] **Phase 3**: live HubSpot, GitHub Issues and PostHog backends, live seeding, mock/live parity check.
-- [ ] **Phase 3b**: HubSpot's own remote MCP server as an alternative CRM backend (OAuth).
+- [x] **Phase 3b**: HubSpot's own remote MCP server as an alternative CRM backend (OAuth), under the same governance.
 - [ ] **Phase 4**: Slack approvals (Socket Mode) and approved writes to HubSpot.
 - [ ] **Phase 5**: polish: demo recording, evals, CI.
 

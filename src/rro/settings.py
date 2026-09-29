@@ -28,7 +28,8 @@ class Settings(BaseSettings):
 
     # Mode
     rro_mode: Backend = "mock"
-    crm_backend: Backend | None = None
+    # The CRM also has "hubspot_mcp": HubSpot's own remote MCP server instead of ours.
+    crm_backend: Literal["mock", "live", "hubspot_mcp"] | None = None
     tickets_backend: Backend | None = None
     usage_backend: Backend | None = None
     rro_max_agent_turns: int = 25
@@ -37,6 +38,9 @@ class Settings(BaseSettings):
 
     # Live systems. Passed only to the MCP server that needs each one; see config/servers.yaml.
     hubspot_access_token: SecretStr | None = None
+    # HubSpot's own remote MCP server: an "MCP connector" in the developer account (see `rro hubspot-login`).
+    hubspot_mcp_client_id: str | None = None
+    hubspot_mcp_client_secret: SecretStr | None = None
     github_tickets_repo: str | None = None
     github_token: SecretStr | None = None
     posthog_host: str = "https://us.posthog.com"
@@ -47,7 +51,7 @@ class Settings(BaseSettings):
     # Locations (override for tests)
     rro_home: Path = PROJECT_ROOT
 
-    def backend_for(self, system: str) -> Backend:
+    def backend_for(self, system: str) -> str:
         return getattr(self, f"{system}_backend", None) or self.rro_mode
 
     def value(self, name: str) -> str | None:

@@ -100,7 +100,7 @@ async def test_full_run_proposes_changes_and_audits_every_call(rt):
     audit = [(r["actor"], r["system"], r["tool"], r["decision"]) for r in rt.store.audit_for_run(result.run_id)]
     assert ("agent", "crm", "manage_crm_objects", "denied") in audit
     assert ("agent", "memory", "get_account_history", "allowed") in audit
-    assert ("system", "crm", "get_crm_objects", "allowed") in audit  # the proposal's deal check
+    assert ("system", "crm", "search_crm_objects", "allowed") in audit  # the proposal's deal check
     assert not any(tool == "manage_crm_objects" and decision == "allowed" for _, _, tool, decision in audit)
 
     run = rt.store.get_run(result.run_id)
