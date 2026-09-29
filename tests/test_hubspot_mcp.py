@@ -55,6 +55,29 @@ async def test_our_dialect_is_unchanged():
     assert crm.update_call("deals", "5014", {"x": "y"})[2] == {"objectType": "deals", "objectId": "5014", "properties": {"x": "y"}}
 
 
+async def test_token_store_remembers_when_a_token_expires(tmp_path):
+    import os
+    import time
+
+    from mcp.shared.auth import OAuthToken
+
+    from rro.hubspot_mcp import FileTokenStorage
+
+    path = tmp_path / "token.json"
+    store = FileTokenStorage(path, "client", "secret")
+    assert store.expires_at is None and await store.get_tokens() is None
+
+    await store.set_tokens(OAuthToken(access_token="a", expires_in=1800, refresh_token="r"))
+    assert (await store.get_tokens()).refresh_token == "r"
+    assert time.time() + 1600 < store.expires_at < time.time() + 1800  # issued now, with a safety margin
+
+    # The first format stored a bare token: its age comes from the file, so an old one reads as expired.
+    path.write_text(OAuthToken(access_token="a", expires_in=1800, refresh_token="r").model_dump_json())
+    two_hours_ago = time.time() - 7200
+    os.utime(path, (two_hours_ago, two_hours_ago))
+    assert store.expires_at < time.time()
+
+
 def test_hubspot_mcp_is_a_remote_server_with_oauth(settings):
     config = settings.model_copy(update={"crm_backend": "hubspot_mcp"})
     assert resolve_launch(config)["crm"] == RemoteServer(url="https://mcp.hubspot.com", auth="hubspot_oauth")

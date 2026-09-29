@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import webbrowser
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -26,7 +27,13 @@ from urllib.parse import parse_qs, urlparse
 import httpx2
 from mcp.client.auth import OAuthClientProvider
 from mcp.shared._httpx_utils import create_mcp_http_client
-from mcp.shared.auth import AuthorizationCodeResult, OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
+from mcp.shared.auth import (
+    AuthorizationCodeResult,
+    OAuthClientInformationFull,
+    OAuthClientMetadata,
+    OAuthMetadata,
+    OAuthToken,
+)
 
 from rro.settings import Settings
 
@@ -41,7 +48,10 @@ class HubSpotLoginRequired(RuntimeError):
 
 
 class FileTokenStorage:
-    """The SDK's TokenStorage: tokens on disk, client credentials from settings."""
+    """The SDK's TokenStorage: tokens on disk (with the time they were issued),
+    client credentials from settings."""
+
+    EXPIRY_MARGIN_SECONDS = 60
 
     def __init__(self, path: Path, client_id: str, client_secret: str):
         self.path = path
@@ -53,20 +63,66 @@ class FileTokenStorage:
             grant_types=["authorization_code", "refresh_token"],
         )
 
-    async def get_tokens(self) -> OAuthToken | None:
+    def _load(self) -> tuple[OAuthToken, float] | None:
         if not self.path.exists():
             return None
-        return OAuthToken.model_validate_json(self.path.read_text(encoding="utf-8"))
+        data = json.loads(self.path.read_text(encoding="utf-8"))
+        if "token" not in data:  # the first format stored the bare token; fall back to the file's age
+            return OAuthToken.model_validate(data), self.path.stat().st_mtime
+        return OAuthToken.model_validate(data["token"]), data["obtained_at"]
+
+    @property
+    def expires_at(self) -> float | None:
+        """When the stored access token stops working (a little early, to be safe)."""
+        loaded = self._load()
+        if loaded is None or loaded[0].expires_in is None:
+            return None
+        token, obtained_at = loaded
+        return obtained_at + token.expires_in - self.EXPIRY_MARGIN_SECONDS
+
+    async def get_tokens(self) -> OAuthToken | None:
+        loaded = self._load()
+        return loaded[0] if loaded else None
 
     async def set_tokens(self, tokens: OAuthToken) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(tokens.model_dump_json(), encoding="utf-8")
+        payload = {"token": tokens.model_dump(mode="json"), "obtained_at": time.time()}
+        self.path.write_text(json.dumps(payload), encoding="utf-8")
 
     async def get_client_info(self) -> OAuthClientInformationFull:
         return self.client
 
     async def set_client_info(self, client_info: OAuthClientInformationFull) -> None:
         pass  # pre-registered; nothing to persist
+
+
+class HubSpotOAuthProvider(OAuthClientProvider):
+    """The SDK's OAuth provider, with two gaps in its handling of *stored* tokens filled:
+
+    1. A reloaded token has no expiry time, so the SDK treats it as valid, sends it,
+       and on the 401 starts a whole new browser login instead of using the refresh
+       token. Here the expiry is restored from when the token was issued.
+    2. Until it has run discovery, the SDK sends refreshes to <server>/token, but
+       HubSpot's token endpoint is /oauth/v3/token. Here the (public) authorization
+       server metadata is fetched up front.
+
+    With both, an expired token is refreshed silently at start-up or mid-session,
+    and a browser login is only ever needed if the refresh token itself is revoked.
+    """
+
+    async def _initialize(self) -> None:
+        await super()._initialize()
+        storage = self.context.storage
+        if isinstance(storage, FileTokenStorage):
+            self.context.token_expiry_time = storage.expires_at
+        if self.context.oauth_metadata is None:
+            try:
+                async with httpx2.AsyncClient(timeout=30) as http:
+                    response = await http.get(f"{SERVER_URL}/.well-known/oauth-authorization-server")
+                if response.status_code == 200:
+                    self.context.oauth_metadata = OAuthMetadata.model_validate_json(response.content)
+            except httpx2.HTTPError:
+                pass  # the SDK discovers it on the first 401 anyway
 
 
 def token_path(settings: Settings) -> Path:
@@ -81,7 +137,7 @@ def http_client(settings: Settings, *, interactive: bool = False) -> httpx2.Asyn
             "HUBSPOT_MCP_CLIENT_ID and HUBSPOT_MCP_CLIENT_SECRET must be set in .env (from your HubSpot MCP connector)."
         )
     callback = _LoopbackCallback()
-    provider = OAuthClientProvider(
+    provider = HubSpotOAuthProvider(
         server_url=SERVER_URL,
         client_metadata=OAuthClientMetadata(
             client_name="Renewal Risk Orchestrator",

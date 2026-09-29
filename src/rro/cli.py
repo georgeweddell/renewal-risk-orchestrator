@@ -122,6 +122,36 @@ def reset(yes: Annotated[bool, typer.Option("--yes", "-y", help="Don't ask for c
     seed()
 
 
+@app.command("demo-reset")
+def demo_reset(yes: Annotated[bool, typer.Option("--yes", "-y", help="Don't ask for confirmation.")] = False) -> None:
+    """Clean slate for a demo (Slack cards, local data, and with --live the HubSpot fields), then a preflight check."""
+    from rro import demo
+
+    settings = get_settings()
+    live = settings.rro_mode == "live"
+    if not yes:
+        console.print("This deletes this app's approval cards in Slack, all local runs, approvals, audit log and briefings"
+                      + (", and clears the risk and pricing fields on your HubSpot test account's deals." if live else "."))  # fmt: skip
+        typer.confirm("Continue?", abort=True)
+
+    steps = [demo.delete_slack_cards(settings), demo.reset_local(settings)]
+    if steps[-1].ok is False:
+        _fail(steps[-1].detail)
+    if live:
+        steps.append(demo.reset_hubspot(settings))
+    console.print("[dim]Preflight: starting MCP servers…[/]")
+    steps += _run_async(lambda: demo.preflight(settings))
+
+    table = Table("", "Step", "Detail", show_header=False, box=None, padding=(0, 1))
+    for step in steps:
+        mark = {True: "[green]✓[/]", False: "[red]✗[/]", None: "[yellow]•[/]"}[step.ok]
+        table.add_row(mark, step.name, step.detail)
+    console.print(table)
+    if any(step.ok is False for step in steps):
+        _fail("Not ready: fix the ✗ items above.")
+    console.print(f"[green]Ready.[/] Next: [bold]rro {'--live ' if live else ''}serve[/], then open http://127.0.0.1:8000")
+
+
 @app.command()
 def accounts() -> None:
     """List the seeded demo accounts."""

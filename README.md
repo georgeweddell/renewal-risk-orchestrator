@@ -157,7 +157,7 @@ Clicks arrive over Socket Mode, so no public URL is needed. The listener runs in
 
 ## The 3-minute demo
 
-Run `rro reset -y` first, then `rro serve`.
+Run `rro demo-reset` first (add `--live` to include HubSpot and Slack): it clears everything a previous demo touched, then checks every system is ready. Then `rro serve`.
 
 1. **Accounts page**: eight customers, designed as three healthy, three at-risk and two critical. Click **Prep renewal** on Halcyon Robotics.
 2. **The run page**: the trace (read straight from the audit log) shows the agent find the company, then query tickets, usage and memory in parallel. It scores the account critical, 90/100.
@@ -188,6 +188,7 @@ From the terminal, `rro tools` shows the policy at work (`crm.manage_crm_objects
 | `rro score [SLUG]` | Deterministic risk scores via the MCP servers, with no LLM |
 | `rro eval` | Run the agent on every account and grade it against ground truth (uses the Claude API) |
 | `rro reset` | Delete runs, approvals, the audit log and briefings, then reseed |
+| `rro demo-reset` | Clean slate for a demo (Slack cards, local data, and with `--live` the HubSpot fields), then a preflight check of every system |
 
 ## Configuration
 
