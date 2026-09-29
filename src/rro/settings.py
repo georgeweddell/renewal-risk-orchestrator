@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     hubspot_mcp_client_secret: SecretStr | None = None
     github_tickets_repo: str | None = None
     github_token: SecretStr | None = None
+    # Seeding only (`rro seed-live`): broader than a run needs, so kept apart from the runtime tokens above.
+    hubspot_seed_access_token: SecretStr | None = None
+    github_seed_token: SecretStr | None = None
     posthog_host: str = "https://us.posthog.com"
     posthog_project_id: str | None = None
     posthog_project_api_key: SecretStr | None = None
@@ -52,7 +55,7 @@ class Settings(BaseSettings):
     slack_bot_token: SecretStr | None = None
     slack_app_token: SecretStr | None = None
     slack_approvals_channel: str | None = None
-    slack_approvers: str = ""  # comma-separated Slack member IDs; empty = anyone in the channel
+    slack_approvers: str = ""  # comma-separated Slack member IDs allowed to decide; required for Slack decisions in the channel
     # Where the web UI is reachable, for "read the briefing" links in Slack.
     rro_base_url: str = "http://127.0.0.1:8000"
 

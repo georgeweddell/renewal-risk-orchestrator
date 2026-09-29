@@ -139,3 +139,16 @@ def test_a_missing_live_credential_is_a_clear_error(settings):
 
 def test_posthog_ingest_host_is_derived():
     assert Settings(_env_file=None, posthog_host="https://eu.posthog.com").posthog_ingest_host == "https://eu.i.posthog.com"
+
+
+def test_seeding_prefers_its_own_credentials(settings):
+    from rro.live_seed import seed_credential
+
+    notes = []
+    runtime_only = settings.model_copy(update={"github_token": "runtime"})
+    assert seed_credential(runtime_only, "GITHUB_SEED_TOKEN", "GITHUB_TOKEN", notes.append) == "runtime"
+    assert "Set GITHUB_SEED_TOKEN" in notes[0]  # works, but says how to narrow the runtime token
+
+    notes.clear()
+    both = runtime_only.model_copy(update={"github_seed_token": "seed"})
+    assert seed_credential(both, "GITHUB_SEED_TOKEN", "GITHUB_TOKEN", notes.append) == "seed" and notes == []

@@ -19,6 +19,10 @@ if TYPE_CHECKING:
     from rro.notify.slack import SlackListener, SlackNotifier
 
 
+class SlackConfigError(RuntimeError):
+    pass
+
+
 @dataclass
 class Runtime:
     settings: Settings
@@ -49,6 +53,11 @@ class Runtime:
         """Receives Approve/Reject clicks from Slack. Needs the app-level token for Socket Mode."""
         if not (self.notifier and self.settings.slack_app_token):
             return None
+        if not self.settings.slack_approver_ids:
+            raise SlackConfigError(
+                "SLACK_APPROVERS is empty, so nobody could approve or reject in Slack. "
+                "Add the Slack member IDs (U...) of the people who may decide to .env."
+            )
         from rro.notify.slack import SlackApprovalHandlers, SlackListener
 
         handlers = SlackApprovalHandlers(self.notifier, self.approvals, self.approval_service, self.settings.slack_approver_ids)

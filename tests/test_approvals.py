@@ -54,7 +54,8 @@ async def test_approval_runs_exactly_the_approved_write(rt):
     audit = [(r["actor"], r["system"], r["tool"], r["decision"], r["approval_id"]) for r in rt.store.audit_for_run("run-1")]
     assert audit[0] == ("human:Priya Shah", "approvals", "approve", "allowed", approval.id)
     assert audit[1] == ("executor", "crm", "manage_crm_objects", "allowed", approval.id)
-    assert audit[2][3] == "denied"
+    assert audit[2] == ("system", "memory", "record_decision", "allowed", approval.id)
+    assert audit[3][3] == "denied"
 
     latest = rt.memory.for_account(HALCYON)[0]
     assert latest.source == "run:run-1" and latest.status == "approved" and latest.outcome == "pending"
@@ -86,6 +87,26 @@ async def test_rejection_needs_a_reason_and_is_remembered(rt):
         history = json.loads((await gateway.call("memory__get_account_history", {"account_id": HALCYON}, run_id=None)).text)
     newest = history["decisions"][0]
     assert newest["status"] == "rejected" and newest["note"] == "Wait for the P1 fixes before flagging."
+
+
+@pytest.mark.parametrize("decide", ["approve", "reject"])
+async def test_memory_keeps_no_model_written_text(rt, decide):
+    # The reason is model-written and could echo a ticket; memory must not carry it into future runs.
+    approval = propose(rt, properties={**RISK_PROPS, "renewal_risk_reason": "MODEL-TEXT-CANARY"})
+    async with rt.gateway:
+        if decide == "approve":
+            await rt.approval_service().approve(approval.id, by="Priya Shah")
+        else:
+            rt.approval_service().reject(approval.id, by="Priya Shah", note="Not yet.")
+
+    latest = rt.memory.for_account(HALCYON)[0]
+    assert latest.source == "run:run-1"
+    assert latest.proposal == "Set renewal_risk_level = critical, renewal_risk_score = 90 on the renewal deal"
+    assert "MODEL-TEXT-CANARY" not in json.dumps(latest.to_dict())
+
+    # Every memory write is in the audit log, tied to the human decision behind it.
+    writes = [r for r in rt.store.audit_for_run("run-1") if r["system"] == "memory"]
+    assert [(w["tool"], w["approval_id"]) for w in writes] == [("record_decision", approval.id)]
 
 
 async def test_similar_decisions_surface_the_relevant_precedent(rt):

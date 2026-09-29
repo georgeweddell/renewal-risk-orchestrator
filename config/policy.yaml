@@ -8,22 +8,33 @@
 #           and only for an action a human has approved.
 #
 # Servers can label their own tools read-only or destructive (MCP "tool
-# annotations"). Those labels are recorded for comparison, but this file is
-# the source of truth: a server's claims about itself aren't a security control.
+# annotations"). This file is the source of truth: a server's claims about
+# itself can make the gateway stricter (see the trifecta gate), never looser.
+#
+# content: who can write what a system returns.
+#   untrusted - people outside the company, or anyone with edit access, can put
+#               free text in it. The agent is told to treat it as data only.
+#   trusted   - produced by this company's own code or named approvers.
+# A system without a label counts as untrusted.
 
 systems:
   crm:
+    content: untrusted  # free-text fields: anyone with CRM access, forms and integrations write them
     read: [search_crm_objects, get_crm_objects, search_owners]
     write: [manage_crm_objects]
 
   tickets:
+    content: untrusted  # written by customers
     read: [list_issues, get_issue]
 
   usage:
+    content: trusted    # aggregate numbers computed by our own server; no free text
     read: [get_usage_trend]
 
   memory:
     # Written only by the approval executor, directly; there are no memory write tools.
+    # It holds code-built facts and notes from the approvers in SLACK_APPROVERS.
+    content: trusted
     read: [get_account_history, find_similar_decisions]
 
 # Limits on what the agent may propose. Checked when a proposal is made,

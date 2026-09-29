@@ -15,6 +15,7 @@ from typing import Any, Literal
 import yaml
 
 Scope = Literal["read", "write"]
+Content = Literal["trusted", "untrusted"]
 # (approval_id, system, tool, args) -> is there an approved action matching exactly this call?
 ApprovalCheck = Callable[[str, str, str, dict[str, Any]], bool]
 
@@ -36,25 +37,36 @@ class Policy:
         scopes: dict[tuple[str, str], Scope],
         approval_check: ApprovalCheck = _no_approvals,
         limits: dict[str, Any] | None = None,
+        content: dict[str, Content] | None = None,
     ):
         self._scopes = scopes
         self._approval_check = approval_check
         self.limits = limits or {}
+        self._content = content or {}
 
     @classmethod
     def load(cls, path: Path, approval_check: ApprovalCheck = _no_approvals) -> Policy:
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         scopes: dict[tuple[str, str], Scope] = {}
+        content: dict[str, Content] = {}
         for system, rules in (raw.get("systems") or {}).items():
+            label = rules.get("content", "untrusted")
+            if label not in ("trusted", "untrusted"):
+                raise ValueError(f"{system}.content must be 'trusted' or 'untrusted' in {path.name}, not {label!r}")
+            content[system] = label
             for scope in ("read", "write"):
                 for tool in rules.get(scope) or []:
                     if (system, tool) in scopes:
                         raise ValueError(f"{system}.{tool} is listed under more than one scope in {path.name}")
                     scopes[(system, tool)] = scope
-        return cls(scopes, approval_check, raw.get("limits") or {})
+        return cls(scopes, approval_check, raw.get("limits") or {}, content)
 
     def scope_of(self, system: str, tool: str) -> Scope | None:
         return self._scopes.get((system, tool))
+
+    def content_of(self, system: str) -> Content:
+        """Who can write what this system returns. Unlabelled systems count as untrusted."""
+        return self._content.get(system, "untrusted")
 
     def authorize(
         self, system: str, tool: str, args: dict[str, Any], *, actor: str, approval_id: str | None = None

@@ -132,6 +132,14 @@ class ToolInputError(ValueError):
 class LocalTools:
     definitions = [SCORE_TOOL, PROPOSE_CRM_TOOL, PROPOSE_PRICING_TOOL, BRIEFING_TOOL]
     names = frozenset(t["name"] for t in definitions)
+    # What each tool does beyond the conversation, checked by the trifecta gate before every run:
+    # none, approval (queues a write for a human) or local (a file in this app).
+    effects = {
+        "score_renewal_risk": "none",
+        "propose_crm_update": "approval",
+        "propose_pricing_exception": "approval",
+        "write_briefing": "local",
+    }
 
     def __init__(
         self,
@@ -152,6 +160,7 @@ class LocalTools:
         self.model = model
         self.crm = CrmAccess(gateway, run_id=run_id)
         self.assessments: dict[str, RiskAssessment] = {}
+        self.account: str | None = None  # the one account this run is about: the first one scored
         self.proposed: list[str] = []  # approval IDs created in this run
         self.briefing: tuple[str, Path] | None = None  # (account_slug, path)
 
@@ -181,6 +190,14 @@ class LocalTools:
     # --- scoring ------------------------------------------------------------------
     async def _score(self, args: dict[str, Any]) -> str:
         slug = _slug(args["account_slug"])
+        # One run, one account. Proposals and the briefing need a score (see _scored), so pinning
+        # the account here means text read during this run can't steer a write onto another account.
+        if self.account not in (None, slug):
+            raise ToolInputError(
+                f"This run is about '{self.account}'. Other accounts can't be scored, proposed on or briefed "
+                "in the same run; if another account needs attention, say so in the briefing."
+            )
+        self.account = slug
         try:
             renewal = date.fromisoformat(str(args["renewal_date"])[:10])
         except ValueError as exc:

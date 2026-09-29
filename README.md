@@ -75,7 +75,7 @@ A renewal is a good test of whether an agent can do real cross-system work. The 
   * write only by the executor, for a human-approved payload
 ```
 
-**Claude decides what to look at and what to recommend. Deterministic code decides what's allowed, what gets written and what gets recorded.** The design decisions, including the MCP-specific ones, are explained in [docs/architecture.md](docs/architecture.md).
+**Claude decides what to look at and what to recommend. Deterministic code decides what's allowed, what gets written and what gets recorded.** The design decisions, including the MCP-specific ones, are explained in [docs/architecture.md](docs/architecture.md). How it holds up against prompt injection, including what I found auditing it and what's still a risk, is in [SECURITY.md](SECURITY.md).
 
 ## Evals
 
@@ -120,8 +120,8 @@ The same agent, policy and prompts, pointed at real systems. Every account is on
 
 | System | Account | What goes in `.env` |
 |---|---|---|
-| HubSpot | Developer account → **developer test account**, with a private app / service key (companies and deals read/write, owners read, deal and company schemas read/write) | `HUBSPOT_ACCESS_TOKEN` |
-| GitHub Issues | A repo for tickets, plus a fine-grained token with **Issues: read and write** on that repo only | `GITHUB_TICKETS_REPO`, `GITHUB_TOKEN` |
+| HubSpot | Developer account → **developer test account**, with a private app for runs (companies read, deals read/write, owners read) and, optionally, a second one for seeding (adds companies write and schemas write) | `HUBSPOT_ACCESS_TOKEN`, `HUBSPOT_SEED_ACCESS_TOKEN` |
+| GitHub Issues | A repo for tickets, a fine-grained token with **Issues: read-only** on that repo for runs, and optionally one with Issues read/write for seeding | `GITHUB_TICKETS_REPO`, `GITHUB_TOKEN`, `GITHUB_SEED_TOKEN` |
 | PostHog | A project, plus a personal API key with **Query: read** and **Project: read** | `POSTHOG_HOST`, `POSTHOG_PROJECT_ID`, `POSTHOG_PROJECT_API_KEY`, `POSTHOG_PERSONAL_API_KEY` |
 
 ```bash
@@ -146,7 +146,7 @@ HubSpot's server offers 29 tools. The policy shows the agent three of them, and 
 
 Proposals can be approved or rejected from a Slack channel. Each one is posted as a card showing the proposal, its reasoning, the exact write and its payload hash, with **Approve** and **Reject…** buttons. Reject asks for a reason, because memory needs one. After a decision, from Slack, the web UI or the CLI, the card updates to show who decided and what happened.
 
-The approver recorded in the audit log and in memory is the Slack user who clicked, by real name and member ID. `SLACK_APPROVERS` can restrict decisions to named people.
+The approver recorded in the audit log and in memory is the Slack user who clicked, by real name and member ID. `SLACK_APPROVERS` names the people who may decide; it is required, and with it empty nobody can.
 
 Setup (free workspace, about 10 minutes):
 

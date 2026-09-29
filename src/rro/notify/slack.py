@@ -54,7 +54,9 @@ class SlackNotifier:
 
     async def post_approval(self, approval: Approval) -> None:
         response = await self.client.chat_postMessage(
-            channel=self.channel, text=_fallback_text(approval), blocks=approval_blocks(approval, self.settings.rro_base_url)
+            channel=self.channel, text=_fallback_text(approval), blocks=approval_blocks(approval, self.settings.rro_base_url),
+            # Never let Slack fetch a preview of a link in the card: the card carries model-written text.
+            unfurl_links=False, unfurl_media=False,
         )
         self.approvals.set_slack_message(approval.id, response["channel"], response["ts"])
         self._audit(approval, "post_approval", {"approval_id": approval.id, "channel": response["channel"]})
@@ -116,7 +118,7 @@ class SlackApprovalHandlers:
     async def on_reject_submit(self, ack: Callable, body: dict, view: dict, client: Any) -> None:
         user_id, approval_id = body["user"]["id"], view["private_metadata"]
         note = view["state"]["values"][REASON_BLOCK][REASON_INPUT]["value"] or ""
-        if self.allowed and user_id not in self.allowed:
+        if user_id not in self.allowed:
             await ack(response_action="errors", errors={REASON_BLOCK: "You're not on the approver list for this channel."})
             return
         name = await self.notifier.approver_name(user_id)
@@ -129,7 +131,9 @@ class SlackApprovalHandlers:
         await self.notifier.update_card(self.approvals.get(approval_id))
 
     async def _may_decide(self, client: Any, user_id: str, channel: str) -> bool:
-        if not self.allowed or user_id in self.allowed:
+        # Fail closed: an empty list means nobody may decide, not everybody. A rejection
+        # note goes into memory that future runs read, so who may write one matters.
+        if user_id in self.allowed:
             return True
         await client.chat_postEphemeral(
             channel=channel, user=user_id, text="Only the configured approvers (SLACK_APPROVERS) can decide on these."
@@ -176,6 +180,18 @@ class SlackListener:
 
 
 # --- Block Kit ----------------------------------------------------------------------------
+def _esc(text: str) -> str:
+    """Make text inert in Slack mrkdwn.
+
+    Summaries, rationales and the write payload contain model-written text, and
+    names come from CRM fields. Slack reads <...> as a link or a mention
+    (<!channel>, <@U123>, <https://...|text>), so &, < and > are escaped as
+    Slack's formatting guide says. The text still reads the same; it just can't
+    ping anyone or hide a link behind friendly words.
+    """
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def approval_blocks(a: Approval, base_url: str) -> list[dict]:
     label = ACTION_LABELS.get(a.action_type, a.action_type)
     run_link = f"<{base_url.rstrip('/')}/runs/{a.run_id}|briefing>" if a.run_id else "n/a"
@@ -188,11 +204,11 @@ def approval_blocks(a: Approval, base_url: str) -> list[dict]:
                 {"type": "mrkdwn", "text": f"*Drivers*\n{', '.join(a.drivers) or 'none'}"},
             ],
         },
-        {"type": "section", "text": {"type": "mrkdwn", "text": a.summary[:2900]}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": _esc(a.summary)[:2900]}},
     ]
     if a.action_type == "pricing_exception":
-        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": f"*Rationale:* {a.rationale}"[:2900]}})
-    write = json.dumps(a.args, indent=1)
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": f"*Rationale:* {_esc(a.rationale)}"[:2900]}})
+    write = _esc(json.dumps(a.args, indent=1))
     blocks += [
         {"type": "section", "text": {"type": "mrkdwn", "text": f"*Exact write the executor will make:* `{a.system}.{a.tool}`\n```{write[:2500]}```"}},
         {"type": "context", "elements": [{"type": "mrkdwn", "text": f"`{a.id}` · payload sha256 `{a.payload_hash[:16]}…` · {run_link}"}]},
@@ -231,7 +247,7 @@ def reject_modal(a: Approval) -> dict:
         "submit": {"type": "plain_text", "text": "Reject"},
         "close": {"type": "plain_text", "text": "Cancel"},
         "blocks": [
-            {"type": "section", "text": {"type": "mrkdwn", "text": f"*{a.account_name}*: {a.summary[:500]}"}},
+            {"type": "section", "text": {"type": "mrkdwn", "text": f"*{_esc(a.account_name)}*: {_esc(a.summary)[:500]}"}},
             {
                 "type": "input",
                 "block_id": REASON_BLOCK,
@@ -245,13 +261,13 @@ def reject_modal(a: Approval) -> dict:
 def _outcome(a: Approval) -> str:
     when = (a.decided_at or "")[:16].replace("T", " ")
     if a.status == "executed":
-        return f":white_check_mark: *Approved* by {a.decided_by} · {when} UTC · written to the CRM by the executor"
+        return f":white_check_mark: *Approved* by {_esc(a.decided_by or '')} · {when} UTC · written to the CRM by the executor"
     if a.status == "rejected":
-        return f":x: *Rejected* by {a.decided_by} · {when} UTC · “{a.decision_note}”"
+        return f":x: *Rejected* by {_esc(a.decided_by or '')} · {when} UTC · “{_esc(a.decision_note or '')}”"
     if a.status == "failed":
-        return f":warning: *Approved* by {a.decided_by}, but the write failed: {(a.result_text or '')[:200]}"
-    return f"*{a.status}* by {a.decided_by}"
+        return f":warning: *Approved* by {_esc(a.decided_by or '')}, but the write failed: {_esc((a.result_text or '')[:200])}"
+    return f"*{a.status}* by {_esc(a.decided_by or '')}"
 
 
 def _fallback_text(a: Approval) -> str:
-    return f"{ACTION_LABELS.get(a.action_type, a.action_type)} for {a.account_name}: {a.status}"
+    return _esc(f"{ACTION_LABELS.get(a.action_type, a.action_type)} for {a.account_name}: {a.status}")

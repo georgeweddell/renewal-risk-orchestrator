@@ -18,17 +18,15 @@ from pathlib import Path
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from markdown_it import MarkdownIt
 
 from rro.agent.llm import ClaudeLLM
 from rro.governance.approvals import ApprovalError
 from rro.runtime import Runtime, build_runtime
 from rro.seeding import load_seed
 from rro.settings import get_settings
+from rro.web.briefing import allowed_link_prefixes, briefing_renderer
 
 TEMPLATES = Jinja2Templates(directory=Path(__file__).parent / "templates")
-# Briefings are model output: raw HTML in them is escaped, never rendered.
-MARKDOWN = MarkdownIt("commonmark", {"html": False}).enable("table")
 APPROVER_COOKIE = "rro_approver"
 
 
@@ -36,6 +34,8 @@ APPROVER_COOKIE = "rro_approver"
 async def lifespan(app: FastAPI):
     rt = build_runtime(get_settings())
     app.state.rt = rt
+    # Briefings are model output: no images, no raw HTML, and links only to the ticket tracker.
+    app.state.markdown = briefing_renderer(allowed_link_prefixes(rt.settings))
     app.state.tasks = set()
     async with rt.gateway:
         listener = rt.slack_listener()  # Approve/Reject clicks from Slack, if configured
@@ -127,7 +127,7 @@ def _run_context(request: Request, run_id: str) -> dict:
         raise HTTPException(404, "No such run")
     briefing_html = None
     if run["briefing_path"] and Path(run["briefing_path"]).exists():
-        briefing_html = MARKDOWN.render(Path(run["briefing_path"]).read_text(encoding="utf-8"))
+        briefing_html = request.app.state.markdown.render(Path(run["briefing_path"]).read_text(encoding="utf-8"))
     return {
         "run": run,
         "trace": rt.store.audit_for_run(run_id),

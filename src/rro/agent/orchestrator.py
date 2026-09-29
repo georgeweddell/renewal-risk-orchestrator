@@ -13,6 +13,7 @@ blocks, are passed back exactly as received.
 from __future__ import annotations
 
 import asyncio
+import re
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -26,6 +27,7 @@ from rro.agent.prompts import SYSTEM_PROMPT
 from rro.db import Store
 from rro.governance.approvals import ApprovalStore
 from rro.governance.gateway import ToolGateway
+from rro.governance.trifecta import TrifectaError, check
 from rro.risk import RiskAssessment, RiskConfig
 from rro.settings import Settings
 
@@ -95,6 +97,10 @@ class Orchestrator:
         nudged = False
 
         try:
+            try:  # before the model reads anything: no path from untrusted text to an unapproved write
+                check(self.gateway.inventory(), self.gateway.policy, LocalTools.effects, LocalTools.names)
+            except TrifectaError as exc:
+                raise AgentError(str(exc)) from exc
             for turn in range(1, self.settings.rro_max_agent_turns + 1):
                 result.turns = turn
                 response = await self.llm.create(system=SYSTEM_PROMPT, tools=tools, messages=messages)
@@ -163,6 +169,9 @@ class Orchestrator:
         else:
             outcome = await self.gateway.call(block.name, block.input, run_id=run_id, actor="agent")
             text, is_error, denied = outcome.text, outcome.is_error, not outcome.decision.allowed
+            if not denied:  # what a server returned, as opposed to the gateway's own refusal
+                system = block.name.partition("__")[0]
+                text = as_data(system, self.gateway.policy.content_of(system), text)
         emit(AgentEvent("tool_result", {"id": block.id, "name": block.name, "is_error": is_error, "denied": denied, "text": text}))
         result: dict[str, Any] = {"type": "tool_result", "tool_use_id": block.id, "content": text}
         if is_error:
@@ -178,6 +187,19 @@ class Orchestrator:
                 emit(AgentEvent("text", {"text": block.text}))
             elif block.type == "fallback":
                 emit(AgentEvent("fallback", {"from": block.from_.model, "to": block.to.model}))
+
+
+_CLOSING_TAG = re.compile(r"<\s*/\s*tool_output", re.IGNORECASE)
+
+
+def as_data(system: str, trust: str, text: str) -> str:
+    """Wrap a tool result so the model reads it as data from a named source, never as instructions.
+
+    The system prompt says what the tags mean. A result can't close the wrapper early and
+    continue as if it were outside it: any closing tag inside the text is defused.
+    """
+    body = _CLOSING_TAG.sub("&lt;/tool_output", text)
+    return f'<tool_output source="{system}" trust="{trust}">\n{body}\n</tool_output>'
 
 
 def _add_usage(total: Counter[str], usage: Any) -> None:

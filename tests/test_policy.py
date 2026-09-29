@@ -44,3 +44,13 @@ def test_a_tool_cannot_be_in_two_scopes(tmp_path):
     path.write_text("systems:\n  crm:\n    read: [x]\n    write: [x]\n")
     with pytest.raises(ValueError, match="more than one scope"):
         Policy.load(path)
+
+
+def test_content_labels_default_to_untrusted(policy, tmp_path):
+    assert policy.content_of("tickets") == "untrusted" and policy.content_of("memory") == "trusted"
+    assert policy.content_of("a_new_system") == "untrusted"  # unlabelled means untrusted
+
+    path = tmp_path / "policy.yaml"
+    path.write_text("systems:\n  tickets:\n    content: mostly-fine\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="trusted' or 'untrusted"):
+        Policy.load(path)

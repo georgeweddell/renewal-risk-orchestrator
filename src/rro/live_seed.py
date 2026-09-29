@@ -74,10 +74,21 @@ def _check(response: httpx.Response, what: str, ok: tuple[int, ...] = ()) -> htt
 
 
 # --- HubSpot ------------------------------------------------------------------------
+def seed_credential(settings: Settings, seed_name: str, runtime_name: str, log: Log) -> str | None:
+    """Seeding needs more than the agent does (creating properties, labels and issues), so it has
+    its own credential. The runtime token can then carry only what a run needs. Falls back to the
+    runtime token, with a note, so an existing setup keeps working."""
+    if token := settings.value(seed_name):
+        return token
+    if token := settings.value(runtime_name):
+        log(f"  note: seeding with {runtime_name}. Set {seed_name} so {runtime_name} can be cut down to runtime scopes (see .env.example).")
+    return token
+
+
 def seed_hubspot(settings: Settings, seed: SeedData, log: Log, today: date | None = None) -> None:
-    token = settings.value("HUBSPOT_ACCESS_TOKEN")
+    token = seed_credential(settings, "HUBSPOT_SEED_ACCESS_TOKEN", "HUBSPOT_ACCESS_TOKEN", log)
     if not token:
-        raise LiveSeedError("HUBSPOT_ACCESS_TOKEN is not set in .env")
+        raise LiveSeedError("HUBSPOT_SEED_ACCESS_TOKEN (or HUBSPOT_ACCESS_TOKEN) is not set in .env")
     today = today or datetime.now(UTC).date()
     hs = httpx.Client(base_url="https://api.hubapi.com", headers={"Authorization": f"Bearer {token}"}, timeout=30)
 
@@ -141,9 +152,9 @@ PRIORITY_COLOURS = {"P1": "b60205", "P2": "d93f0b", "P3": "fbca04"}
 
 
 def seed_github(settings: Settings, seed: SeedData, log: Log, now: datetime | None = None) -> None:
-    repo, token = settings.value("GITHUB_TICKETS_REPO"), settings.value("GITHUB_TOKEN")
+    repo, token = settings.value("GITHUB_TICKETS_REPO"), seed_credential(settings, "GITHUB_SEED_TOKEN", "GITHUB_TOKEN", log)
     if not (repo and token):
-        raise LiveSeedError("GITHUB_TICKETS_REPO and GITHUB_TOKEN must be set in .env")
+        raise LiveSeedError("GITHUB_TICKETS_REPO and GITHUB_SEED_TOKEN (or GITHUB_TOKEN) must be set in .env")
     repo = normalise_repo(repo)
     now = now or datetime.now(UTC)
     gh = httpx.Client(

@@ -184,20 +184,56 @@ class ApprovalService:
         )
 
     def _remember(self, approval: Approval, status: str, by: str, note: str | None, outcome: str | None) -> None:
-        self.memory.record(
-            Decision(
-                account_slug=approval.account_slug,
-                account_name=approval.account_name,
-                decided_on=datetime.now(UTC).date().isoformat(),
-                action_type=approval.action_type,
-                risk_band=approval.risk_band,
-                risk_score=approval.risk_score,
-                drivers=approval.drivers,
-                proposal=approval.summary,
-                status=status,
-                approver=by,
-                note=note,
-                outcome=outcome,
-                source=f"run:{approval.run_id}",
-            )
+        """Record the decision for future runs.
+
+        Memory is read by every later run, on every account with a similar profile,
+        so it only holds what code produced (the action and its structured values)
+        and what a human wrote (the note). The model's own words, such as the
+        proposal's reason, never go in: they may echo text the model read in a
+        ticket or CRM field, and memory would keep that text working long after
+        the run that read it.
+        """
+        decision = Decision(
+            account_slug=approval.account_slug,
+            account_name=approval.account_name,
+            decided_on=datetime.now(UTC).date().isoformat(),
+            action_type=approval.action_type,
+            risk_band=approval.risk_band,
+            risk_score=approval.risk_score,
+            drivers=approval.drivers,
+            proposal=memory_proposal(approval),
+            status=status,
+            approver=by,
+            note=note,
+            outcome=outcome,
+            source=f"run:{approval.run_id}",
         )
+        decision_id = self.memory.record(decision)
+        self.store.add_audit(
+            AuditEntry(
+                run_id=approval.run_id, actor="system", system="memory", tool="record_decision", scope="write",
+                decision="allowed", reason=f"decision {decision_id}, after a human {status} {approval.id}",
+                args={"proposal": decision.proposal, "status": status, "approver": by, "note": note},
+                approval_id=approval.id,
+            )  # fmt: skip
+        )
+
+
+def memory_proposal(approval: Approval) -> str:
+    """What was proposed, in words built by code from the structured write (no model text)."""
+    props = _written_properties(approval.args)
+    if approval.action_type == "crm_risk_update":
+        return (
+            f"Set renewal_risk_level = {props.get('renewal_risk_level')}, "
+            f"renewal_risk_score = {props.get('renewal_risk_score')} on the renewal deal"
+        )
+    if approval.action_type == "pricing_exception":
+        return f"{props.get('pricing_exception_pct')}% pricing exception on the renewal deal"
+    return approval.action_type
+
+
+def _written_properties(args: dict[str, Any]) -> dict[str, Any]:
+    """The properties a CRM write sets, in either dialect (see rro.crm_access)."""
+    if "updateRequest" in args:
+        return args["updateRequest"]["objects"][0]["properties"]
+    return args.get("properties", {})

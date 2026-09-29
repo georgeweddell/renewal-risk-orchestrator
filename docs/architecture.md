@@ -29,7 +29,7 @@ There is no path from the model to a write tool: the model isn't shown write too
 
 `data/memory.db` holds past renewal decisions: the account, the risk band and drivers at the time, what was proposed, who approved or rejected it and why, and the eventual outcome (renewed, churned, pending). It is seeded from `seed/memory.yaml`, which includes former customers, because the most useful precedents are accounts whose renewals have already happened.
 
-The agent reads memory through its own MCP server (`get_account_history`, `find_similar_decisions`), so memory reads are scoped and audited like any system. Only the approval executor writes to it, directly, so the agent can't rewrite the record it learns from.
+The agent reads memory through its own MCP server (`get_account_history`, `find_similar_decisions`), so memory reads are scoped and audited like any system. Only the approval executor writes to it, directly, so the agent can't rewrite the record it learns from. A record holds what code built (the action and its values) and the approver's note, never the model's own wording: a proposal's reason could echo a support ticket, and memory would keep that text in front of every later run. Each memory write has its own audit entry.
 
 Similarity is structured, not semantic: the overlap between risk drivers (`usage_drop`, `open_p1`, `open_p2`, `renewal_soon`) plus a bonus for the same band. The records are structured, and a precedent should be easy to explain ("same drivers, same band"). Embeddings would add infrastructure and make matches harder to justify.
 
@@ -43,7 +43,7 @@ In testing, this changes behaviour in the ways you'd want. For Halcyon, the agen
 
 **Write tools are hidden, not just refused.** The model only sees read-scope tools, so it can't plan around a write it doesn't know exists. If it tries anyway (for example by guessing a name), the gateway refuses the call, returns an error result and audits the attempt. The integration tests cover both cases.
 
-**Server self-descriptions aren't trusted.** MCP lets a server annotate its tools as read-only or destructive. `rro tools` shows those annotations and flags any that disagree with the policy, but enforcement comes only from `policy.yaml`. A server's claims about itself aren't a security control.
+**Server self-descriptions aren't trusted.** MCP lets a server annotate its tools as read-only or destructive. `rro tools` shows those annotations and flags any that disagree with the policy, but permission comes only from `policy.yaml`. A server's claims can make the app stricter, never looser: the trifecta gate refuses to run if a tool the model can see isn't labelled read-only by its server (see [SECURITY.md](../SECURITY.md)).
 
 **Least-privilege environments.** `servers.yaml` lists the exact environment variables each server receives. A server never inherits the orchestrator's environment, so in live mode the tickets server can see the GitHub token and nothing else.
 
@@ -68,7 +68,7 @@ Our own `crm` server remains the default live backend: it needs only a token, an
 Slack is one more place to ask a human, not a second approval system. A click goes to the same `ApprovalService` as the web UI and CLI, so the payload hash, one-shot executor, audit log and memory behave exactly the same.
 
 - *Posting.* When a run ends with proposals, each one is posted as a Block Kit card: proposal, reasoning, risk, the exact write with its payload hash, and Approve / Reject buttons. Approve asks for confirmation. Reject opens a form, because memory needs a reason. Posts and updates are audited (`slack.post_approval`, `slack.update_approval`).
-- *Identity.* The approver is resolved from the click (`users.info`) and recorded as "Real Name (Slack U…)". That closes the web UI's gap, where the approver is whatever name is typed. `SLACK_APPROVERS` limits decisions to named member IDs; anyone else gets a private "you're not on the approver list" reply, and nothing changes.
+- *Identity.* The approver is resolved from the click (`users.info`) and recorded as "Real Name (Slack U…)". That closes the web UI's gap, where the approver is whatever name is typed. `SLACK_APPROVERS` lists the member IDs who may decide, and is required: an empty list means nobody, not everybody, and the listener won't start. Anyone else gets a private "you're not on the approver list" reply, and nothing changes.
 - *One decision, many surfaces.* Whichever surface decides first wins; the others see an already-decided approval. The Slack card is updated after a decision made anywhere, so it never shows stale buttons.
 - *Least privilege.* The app has two bot scopes: `chat:write` (post and update cards) and `users:read` (approver names). It can't read channel history.
 - *Where it runs.* The Socket Mode listener runs inside `rro serve`, or on its own with `rro slack`. `rro run` posts its cards from the terminal; clicks are then handled by whichever listener is running.
@@ -86,6 +86,10 @@ Slack is one more place to ask a human, not a second approval system. A click go
 
 **Known limitation: live usage data ages.** Seeded usage covers the 12 weeks before the seed date. Because only complete weeks count, a week later the newest week has no data and the trends shift. PostHog events can't be deleted, so `seed-live` won't send usage twice to the same project. To refresh live usage for a later demo, point `.env` at a new PostHog project and run `rro seed-live --only posthog`. Mock mode doesn't have this problem, which is why it's the default for demos.
 
+## Prompt-injection defences
+
+The agent reads text strangers can write, so the design assumes the model can be fooled and makes sure a fooled model can't do damage: tool results arrive labelled as untrusted data, every output channel (briefings, Slack cards, memory) is made inert, each run is pinned to one account, and a trifecta gate refuses to run if untrusted text could reach an unapproved write. The audit, the findings and the residual risks are in [SECURITY.md](../SECURITY.md).
+
 ## Other decisions
 
 **Deterministic scoring.** The model gathers the signals and explains them. `src/rro/risk.py` does the arithmetic from `config/risk.yaml`. Scores are reproducible and every point is traceable to a factor. `rro score` computes the same scores with no LLM involved, which gives a ground truth to check the agent against.
@@ -96,7 +100,7 @@ Slack is one more place to ask a human, not a second approval system. A click go
 
 **Append-only audit.** SQLite triggers reject UPDATE and DELETE on `audit_log`, so the app itself can't rewrite history. Credentials are redacted from logged arguments, and briefing bodies are logged by size only.
 
-**Web UI.** FastAPI with server-rendered Jinja templates, plus HTMX to poll a running agent's panel. The live trace is read from the audit log, so what you watch is exactly what's recorded. One gateway is shared for the app's lifetime, and runs execute as background tasks. Briefings are rendered with raw HTML disabled, since they're model output. There's no login, so `rro serve` binds to localhost.
+**Web UI.** FastAPI with server-rendered Jinja templates, plus HTMX to poll a running agent's panel. The live trace is read from the audit log, so what you watch is exactly what's recorded. One gateway is shared for the app's lifetime, and runs execute as background tasks. Briefings are model output, so they render with raw HTML and images off, and links work only to the ticket tracker. There's no login, so `rro serve` binds to localhost.
 
 **Parallel server start-up.** Each MCP client's task groups must be entered and exited in the same task, so each connection is held open by its own long-lived task. That lets all four servers start at once (about 2.5 seconds instead of 8), while tool calls from any task share the connections.
 

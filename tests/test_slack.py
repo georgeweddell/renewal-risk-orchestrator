@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from rro.notify.slack import (
     APPROVE_ACTION,
     REASON_BLOCK,
@@ -11,6 +13,7 @@ from rro.notify.slack import (
     SlackNotifier,
     approval_blocks,
 )
+from rro.runtime import SlackConfigError
 from test_approvals import RISK_PROPS, deal_properties, propose
 
 
@@ -44,7 +47,7 @@ class FakeSlack:
         return [m for m, _ in self.calls]
 
 
-def slack_setup(rt, allowed=frozenset()):
+def slack_setup(rt, allowed=frozenset({"U1", "U7", "U42"})):
     settings = rt.settings.model_copy(update={"slack_approvals_channel": "C123", "rro_base_url": "http://demo.test"})
     fake = FakeSlack()
     notifier = SlackNotifier(settings, rt.approvals, rt.store, client=fake)
@@ -159,3 +162,19 @@ async def test_a_decision_made_elsewhere_updates_the_card(rt):
     rt.approval_service().reject(approval.id, by="Sam Reyes", note="Not yet")
     await notifier.update_card(approval)
     assert fake.calls[-1][0] == "chat_update" and "Sam Reyes" in json.dumps(fake.calls[-1][1]["blocks"])
+
+
+async def test_no_approver_list_means_nobody_decides(rt):
+    fake, _, handlers = slack_setup(rt, allowed=frozenset())
+    approval = propose(rt)
+    async with rt.gateway:
+        await handlers.on_approve(click(approval.id, APPROVE_ACTION), fake)
+    assert rt.approvals.get(approval.id).status == "pending"
+    assert "chat_postEphemeral" in fake.methods()
+
+
+def test_listener_refuses_to_start_without_approvers(rt):
+    rt.settings = rt.settings.model_copy(update={"slack_app_token": "xapp-test", "slack_approvers": ""})
+    rt.notifier = object()  # Slack configured
+    with pytest.raises(SlackConfigError, match="SLACK_APPROVERS"):
+        rt.slack_listener()

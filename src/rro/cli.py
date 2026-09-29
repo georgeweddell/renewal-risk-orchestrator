@@ -16,12 +16,14 @@ from rich.panel import Panel
 from rich.table import Table
 
 from rro.agent.llm import ClaudeLLM
+from rro.agent.local_tools import LocalTools
 from rro.agent.orchestrator import AgentEvent
 from rro.governance.approvals import Approval, ApprovalError
 from rro.governance.gateway import GatewayConfigError
+from rro.governance.trifecta import assess
 from rro.live_seed import LiveSeedError, seed_github, seed_hubspot, seed_posthog
 from rro.risk import score
-from rro.runtime import Runtime, build_runtime
+from rro.runtime import Runtime, SlackConfigError, build_runtime
 from rro.seeding import load_seed, seed_memory, seed_mock_systems
 from rro.settings import get_settings
 from rro.signals import SignalError, collect_signals
@@ -202,6 +204,8 @@ def tools() -> None:
                 )
             console.print(table)
             console.print("[dim]Scopes come from config/policy.yaml. Anything not listed there is hidden and denied.[/]")
+            report = assess(gateway.inventory(), gateway.policy, LocalTools.effects, LocalTools.names)
+            console.print(f"[{'green' if report.safe else 'bold red'}]{report.explain()}[/]")
 
     _run_async(main)
 
@@ -446,7 +450,10 @@ def eval_agent(
 def slack() -> None:
     """Listen for Approve/Reject clicks in Slack (Socket Mode) without the web UI. Ctrl+C to stop."""
     rt = _runtime()
-    listener = rt.slack_listener()
+    try:
+        listener = rt.slack_listener()
+    except SlackConfigError as exc:
+        _fail(str(exc))
     if listener is None:
         _fail("Slack isn't configured: set SLACK_BOT_TOKEN, SLACK_APP_TOKEN and SLACK_APPROVALS_CHANNEL in .env.")
 
@@ -475,6 +482,10 @@ def serve(
     """Start the web UI: run the agent, review briefings, approve or reject proposals."""
     import uvicorn
 
+    try:
+        _runtime().slack_listener()  # refuse to start a listener nobody may use (see SLACK_APPROVERS)
+    except SlackConfigError as exc:
+        _fail(str(exc))
     console.print(f"Renewal Risk Orchestrator ({get_settings().rro_mode} mode) on [bold]http://{host}:{port}[/]")
     uvicorn.run("rro.web.app:app", host=host, port=port, log_level="warning")
 
