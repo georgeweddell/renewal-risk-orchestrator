@@ -23,3 +23,7 @@ Thumbs.db
 
 # /brag working files (the README GIF is copied to docs/)
 brag-output/
+
+# Impeccable working files (review captures include fixture renders)
+.impeccable/review/
+.impeccable/questions/

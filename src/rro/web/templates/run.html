@@ -2,6 +2,6 @@
 {% block title %}{{ run.instruction }} · Renewal Risk Orchestrator{% endblock %}
 {% block content %}
 <h1>{{ run.instruction }}</h1>
-<p class="sub">Run <span class="mono">{{ run.id }}</span> · started {{ run.started_at[:19].replace('T', ' ') }} UTC</p>
+<p class="sub">Run <span class="mono">{{ run.id }}</span> · started <span class="mono">{{ run.started_at[:19].replace('T', ' ') }}</span> UTC</p>
 {% include "_run_panel.html" %}
 {% endblock %}

@@ -2,28 +2,30 @@
 {% block content %}
 <h1>Audit log</h1>
 <p class="sub">Every tool call and human decision, allowed or denied, newest first. Append-only: the database rejects edits and deletes.</p>
-<table>
-  <thead><tr><th>#</th><th>Time (UTC)</th><th>Run</th><th>Actor</th><th>Call</th><th>Scope</th><th>Decision</th><th>Arguments</th><th class="num">ms</th></tr></thead>
+<div class="scroll">
+<table class="strips dense audit stock-blue">
+  <thead><tr><th>#</th><th>Time (UTC)</th><th>Run</th><th>Actor</th><th>Call</th><th>Scope</th><th>Decision</th><th>Arguments</th><th class="right">ms</th></tr></thead>
   <tbody>
   {% for r in rows %}
     <tr>
-      <td class="num muted">{{ r.id }}</td>
-      <td class="num">{{ r.ts[:19].replace('T', ' ') }}</td>
+      <td class="mono">{{ r.id }}</td>
+      <td class="mono nowrap">{{ r.ts[:19].replace('T', ' ') }}</td>
       <td>{% if r.run_id %}<a class="mono" href="/runs/{{ r.run_id }}">{{ r.run_id }}</a>{% endif %}</td>
-      <td class="small">{{ r.actor }}</td>
+      <td class="small {{ 'ink' if r.actor.startswith('human') }}">{{ r.actor }}</td>
       <td class="mono">{{ r.system }}.{{ r.tool }}</td>
       <td class="small">{{ r.scope }}</td>
       <td>
-        <span class="badge b-{{ r.decision }}">{{ r.decision }}</span>
-        {% if r.is_error and r.decision == 'allowed' %}<span class="badge b-pending">error</span>{% endif %}
+        <span class="tag s-{{ r.decision }}">{{ r.decision }}</span>
+        {% if r.is_error and r.decision == 'allowed' %}<span class="tag s-pending">error</span>{% endif %}
         {% if r.decision == 'denied' or r.approval_id %}<div class="muted small">{{ r.reason or '' }}{% if r.approval_id %} <span class="mono">{{ r.approval_id }}</span>{% endif %}</div>{% endif %}
       </td>
-      <td class="mono" style="max-width: 360px; overflow-wrap: anywhere">{{ r.args_json[:220] }}{% if r.args_json|length > 220 %}…{% endif %}</td>
-      <td class="num muted">{{ r.latency_ms if r.latency_ms is not none else '' }}</td>
+      <td class="mono args">{{ r.args_json[:220] }}{% if r.args_json|length > 220 %}…{% endif %}</td>
+      <td class="mono right muted">{{ r.latency_ms if r.latency_ms is not none else '' }}</td>
     </tr>
   {% else %}
-    <tr><td colspan="9" class="muted">No entries yet.</td></tr>
+    <tr class="empty-row"><td colspan="9">No entries yet.</td></tr>
   {% endfor %}
   </tbody>
 </table>
+</div>
 {% endblock %}

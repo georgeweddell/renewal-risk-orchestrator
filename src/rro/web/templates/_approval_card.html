@@ -1,38 +1,42 @@
-<div class="card approval">
-  <div class="head">
-    <strong>{{ 'Pricing exception' if a.action_type == 'pricing_exception' else 'CRM risk update' }}</strong>
-    <span class="badge b-{{ a.status }}">{{ a.status }}</span>
-  </div>
-  <div class="muted small" style="margin-bottom: 6px">{{ a.account_name }} · <span class="mono">{{ a.id }}</span></div>
-  <p style="margin: 0 0 8px">{{ a.summary }}</p>
-  {% if a.action_type == 'pricing_exception' %}<p class="small" style="margin: 0 0 8px"><strong>Rationale:</strong> {{ a.rationale }}</p>{% endif %}
-  <details>
-    <summary>Exact write the executor will make</summary>
-    <pre class="mono">{{ a.system }}.{{ a.tool }}
+<article class="approval st-{{ a.status }} {{ 'stock-salmon' if a.action_type == 'pricing_exception' else 'stock-buff' }}">
+  <header class="approval-head">
+    <h3 class="approval-type">{{ 'Pricing exception' if a.action_type == 'pricing_exception' else 'CRM risk update' }}</h3>
+    <span class="tag s-{{ a.status }}">{{ a.status }}</span>
+  </header>
+  <div class="approval-body">
+    <div class="approval-meta">{{ a.account_name }} · <span class="mono">{{ a.id }}</span></div>
+    <p class="approval-summary">{{ a.summary }}</p>
+    {% if a.action_type == 'pricing_exception' %}<p class="approval-rationale"><strong>Rationale:</strong> {{ a.rationale }}</p>{% endif %}
+    <details class="write">
+      <summary>Exact write the executor will make</summary>
+      <pre class="mono">{{ a.system }}.{{ a.tool }}
 {{ a.args | tojson_pretty }}</pre>
-    <div class="muted small">Payload hash <span class="mono">{{ a.payload_hash[:16] }}…</span>. The executor can only run this exact call, once.</div>
-  </details>
+      <div class="muted small">Payload hash <span class="mono">{{ a.payload_hash[:16] }}…</span>. The executor can only run this exact call, once.</div>
+    </details>
+  </div>
 
+  <div class="clearance">
   {% if a.status == 'pending' %}
     {% if run is defined and run.status == 'running' %}
-      <p class="muted small">You can decide once the run finishes.</p>
+      <p class="wait-note">You can decide once the run finishes.</p>
     {% else %}
-      <form method="post" action="/approvals/{{ a.id }}/decide" style="margin-top: 10px; display: grid; gap: 8px">
+      <form method="post" action="/approvals/{{ a.id }}/decide">
         <input type="hidden" name="next_url" value="{{ next_url }}">
         <input type="text" name="approver" value="{{ approver }}" aria-label="Approver name">
-        <textarea name="note" placeholder="Note (required to reject; future runs learn from it)"></textarea>
-        <div class="row">
-          <button class="primary" name="action" value="approve">Approve</button>
-          <button class="danger" name="action" value="reject">Reject</button>
+        <textarea name="note" placeholder="Note (required to reject; future runs learn from it)" aria-label="Note"></textarea>
+        <div class="actions">
+          <button class="approve" name="action" value="approve">Approve</button>
+          <button class="reject" name="action" value="reject">Reject</button>
         </div>
       </form>
     {% endif %}
   {% else %}
-    <p class="small" style="margin: 10px 0 0">
-      {{ a.status | capitalize }} by <strong>{{ a.decided_by }}</strong>{% if a.decided_at %} · {{ a.decided_at[:16].replace('T', ' ') }} UTC{% endif %}
-      {% if a.decision_note %}<br><span class="muted">“{{ a.decision_note }}”</span>{% endif %}
+    <p class="cleared">
+      {{ a.status | capitalize }} by <strong>{{ a.decided_by }}</strong>{% if a.decided_at %} · <span class="mono">{{ a.decided_at[:16].replace('T', ' ') }} UTC</span>{% endif %}
+      {% if a.decision_note %}<span class="note">“{{ a.decision_note }}”</span>{% endif %}
     </p>
-    {% if a.status == 'executed' %}<p class="small" style="margin: 6px 0 0; color: var(--ok)">Written to the CRM by the executor.</p>{% endif %}
-    {% if a.status == 'failed' %}<p class="error small">{{ a.result_text }}</p>{% endif %}
+    {% if a.status == 'executed' %}<p class="executed-note">Written to the CRM by the executor.</p>{% endif %}
+    {% if a.status == 'failed' %}<p class="error">{{ a.result_text }}</p>{% endif %}
   {% endif %}
-</div>
+  </div>
+</article>

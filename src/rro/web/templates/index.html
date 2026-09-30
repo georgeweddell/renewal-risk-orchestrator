@@ -3,49 +3,55 @@
 <h1>Accounts</h1>
 <p class="sub">Ask the agent to prep a renewal. It reads the CRM, support queue, usage data and decision memory, then proposes changes for a human to approve.</p>
 
-<form method="post" action="/runs" class="card row" style="margin-bottom: 24px">
-  <input type="text" name="instruction" placeholder="Prep the renewal for Halcyon Robotics" required>
-  <button class="primary" type="submit">Run agent</button>
+<form method="post" action="/runs" class="slot">
+  <input type="text" name="instruction" placeholder="Prep the renewal for Halcyon Robotics" aria-label="Instruction" required>
+  <button type="submit">Run agent</button>
 </form>
 
-<table>
+<div class="scroll">
+<table class="strips accounts stock-buff">
   <thead><tr><th>Account</th><th>ARR</th><th>Renewal in</th><th>Latest assessment</th><th>Pending</th><th></th></tr></thead>
   <tbody>
   {% for row in accounts %}
     {% set a = row.account %}{% set latest = row.latest %}
-    <tr>
-      <td><strong>{{ a.name }}</strong><div class="muted small">{{ a.industry }}</div></td>
-      <td class="num">${{ "{:,}".format(a.arr) }}</td>
-      <td class="num">{{ a.renewal_in_days }} days</td>
-      <td>
-        {% if latest and latest.risk_band %}
-          <a href="/runs/{{ latest.id }}"><span class="badge b-{{ latest.risk_band }}">{{ latest.risk_band }}</span> {{ latest.risk_score }}/100</a>
-          <div class="muted small">{{ latest.started_at[:16].replace('T', ' ') }} UTC</div>
-        {% else %}<span class="muted">Not assessed yet</span>{% endif %}
+    <tr class="{{ 'cocked' if row.pending }}">
+      <td><span class="callsign">{{ a.name }}</span><span class="field-note caps muted">{{ a.industry }}</span></td>
+      <td data-label="ARR"><span class="figure">${{ "{:,}".format(a.arr) }}</span></td>
+      <td data-label="Renewal in"><span class="figure">{{ a.renewal_in_days }} days</span></td>
+      {% if latest and latest.risk_band %}
+      <td class="assess band-{{ latest.risk_band }}" data-label="Latest assessment">
+        <a href="/runs/{{ latest.id }}"><span class="score">{{ latest.risk_score }}</span><span class="of">/100</span> <span class="band">{{ latest.risk_band }}</span></a>
+        <div class="when">{{ latest.started_at[:16].replace('T', ' ') }} UTC</div>
       </td>
-      <td>{% if row.pending %}<a href="/approvals"><span class="badge b-pending">{{ row.pending }} to approve</span></a>{% endif %}</td>
-      <td style="text-align: right">
+      {% else %}
+      <td class="assess none" data-label="Latest assessment"><span class="muted small">Not assessed yet</span></td>
+      {% endif %}
+      <td data-label="Pending">{% if row.pending %}<a href="/approvals"><span class="tag s-pending">{{ row.pending }} to approve</span></a>{% endif %}</td>
+      <td class="right">
         <form method="post" action="/runs"><input type="hidden" name="instruction" value="Prep the renewal for {{ a.name }}"><button type="submit">Prep renewal</button></form>
       </td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
+</div>
 
 {% if runs %}
-<h2>Recent runs</h2>
-<table>
+<h2 class="bay-head">Recent runs</h2>
+<div class="scroll">
+<table class="strips dense stock-blue">
   <thead><tr><th>Started (UTC)</th><th>Instruction</th><th>Status</th><th>Risk</th></tr></thead>
   <tbody>
   {% for r in runs %}
     <tr>
-      <td class="num"><a href="/runs/{{ r.id }}">{{ r.started_at[:16].replace('T', ' ') }}</a></td>
+      <td class="mono"><a href="/runs/{{ r.id }}">{{ r.started_at[:16].replace('T', ' ') }}</a></td>
       <td>{{ r.instruction }}</td>
-      <td><span class="badge b-{{ r.status }}">{{ r.status.replace('_', ' ') }}</span></td>
-      <td>{% if r.risk_band %}<span class="badge b-{{ r.risk_band }}">{{ r.risk_band }}</span> {{ r.risk_score }}{% endif %}</td>
+      <td><span class="tag s-{{ r.status }}">{{ r.status.replace('_', ' ') }}</span></td>
+      <td>{% if r.risk_band %}<span class="tag s-{{ r.risk_band }}">{{ r.risk_band }}</span> <span class="figure">{{ r.risk_score }}</span>{% endif %}</td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
+</div>
 {% endif %}
 {% endblock %}

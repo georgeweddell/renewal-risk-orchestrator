@@ -3,86 +3,311 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
   <title>{% block title %}Renewal Risk Orchestrator{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&family=JetBrains+Mono:wght@400;500;700&display=swap">
   <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
   <style>
+    /* A flight-strip board: dark console bays holding printed card strips.
+       Clearance ink (--clear) is reserved for human decisions; model output never uses it. */
     :root {
-      --bg: #f7f7f5; --surface: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --border: #e3e2dc;
-      --accent: #2f5bd3; --ok: #1f7a4d; --warn: #a86a00; --bad: #b3261e;
-      --ok-bg: #e6f4ec; --warn-bg: #fdf1dc; --bad-bg: #fbe7e5; --accent-bg: #e8eefc;
-      --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+      --board: #1c2521; --board-deep: #131a17; --bay: #202a26; --board-line: #33413a;
+      --board-ink: #e4e9e3; --board-muted: #9aa99f;
+      --buff: #efe5c4; --buff-deep: #e3d6ab;
+      --blue: #d8e5eb; --blue-deep: #c5d7df;
+      --salmon: #f4d5c6; --salmon-deep: #eac2af;
+      --paper: #f4f4f0; --fresh: #fbf9f0;
+      --ink: #1b1d1b;
+      --healthy: #2f7d4f; --at-risk: #d49a1c; --critical: #bf3322;
+      --clear: #2537c4; --clear-deep: #1a2894;
+      --lit: #ffd35c;
+      --t-ok: #86d3a2; --t-warn: #f0c35a; --t-bad: #ff9888; --t-ink: #b3bcff; --t-neutral: var(--board-muted);
+      --sans: "Archivo", "Segoe UI", system-ui, sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
     }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #161615; --surface: #1f1f1d; --text: #ecebe6; --muted: #9c9b94; --border: #34332f;
-        --accent: #7ea2ff; --ok: #6fcf97; --warn: #f2c14e; --bad: #ff8a80;
-        --ok-bg: #1c3326; --warn-bg: #3a2e12; --bad-bg: #3d1f1c; --accent-bg: #1f2a47;
-      }
+    /* Card stock. Each stock sets its own tinted secondary ink and status inks. */
+    .stock-buff, .stock-blue, .stock-salmon, .stock-paper {
+      color: var(--ink);
+      --t-ok: #1f6a3d; --t-warn: #875600; --t-bad: #ab2716; --t-ink: var(--clear); --t-neutral: var(--muted);
+      --hair: rgba(40, 34, 20, .2);
     }
+    .stock-buff { --stock: var(--buff); --stock-deep: var(--buff-deep); --muted: #5d5539; }
+    .stock-blue { --stock: var(--blue); --stock-deep: var(--blue-deep); --muted: #45565e; --hair: rgba(20, 40, 50, .18); }
+    .stock-salmon { --stock: var(--salmon); --stock-deep: var(--salmon-deep); --muted: #6a4638; }
+    .stock-paper { --stock: var(--paper); --stock-deep: #e6e6e0; --muted: #55564f; --hair: rgba(0, 0, 0, .14); }
+
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    header { background: var(--surface); border-bottom: 1px solid var(--border); }
-    .bar { max-width: 1200px; margin: 0 auto; padding: 12px 20px; display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
-    .brand { font-weight: 650; color: var(--text); }
-    nav { display: flex; gap: 18px; }
-    nav a { color: var(--muted); }
-    nav a.active { color: var(--text); font-weight: 600; }
-    .meta { margin-left: auto; color: var(--muted); font-size: 13px; }
-    main { max-width: 1200px; margin: 0 auto; padding: 24px 20px 64px; }
-    h1 { font-size: 22px; margin: 0 0 4px; }
-    h2 { font-size: 16px; margin: 28px 0 10px; }
-    .sub { color: var(--muted); margin: 0 0 20px; }
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
-    table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-    th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
-    th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
-    tr:last-child td { border-bottom: 0; }
+    html { background: var(--board); scrollbar-color: #46564d var(--board-deep); -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0; background: var(--board); color: var(--board-ink);
+      font: 400 15px/1.5 var(--sans); font-variant-numeric: tabular-nums;
+      -webkit-font-smoothing: antialiased;
+    }
+    ::selection { background: var(--lit); color: var(--ink); }
+    :focus-visible { outline: 2px solid var(--lit); outline-offset: 2px; }
+    [class*="stock-"] :focus-visible { outline-color: var(--ink); }
+
+    a { color: var(--buff); text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 3px; text-decoration-thickness: 1px; transition: text-decoration-color .15s; }
+    a:hover { text-decoration-color: currentColor; }
+    [class*="stock-"] a { color: var(--ink); text-decoration-color: var(--hair); }
+    [class*="stock-"] a:hover { text-decoration-color: var(--ink); }
+
+    .mono { font-family: var(--mono); font-size: 12.5px; letter-spacing: -.01em; }
     .num { font-variant-numeric: tabular-nums; }
-    .muted { color: var(--muted); }
+    .muted { color: var(--board-muted); }
+    [class*="stock-"] .muted { color: var(--muted); }
     .small { font-size: 13px; }
-    .mono { font-family: var(--mono); font-size: 12.5px; }
-    .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
-    .b-healthy, .b-executed, .b-completed, .b-allowed { background: var(--ok-bg); color: var(--ok); }
-    .b-at-risk, .b-pending, .b-awaiting_approval, .b-running { background: var(--warn-bg); color: var(--warn); }
-    .b-critical, .b-rejected, .b-failed, .b-denied { background: var(--bad-bg); color: var(--bad); }
-    .b-approved, .b-neutral { background: var(--accent-bg); color: var(--accent); }
-    button, .btn { font: inherit; border: 1px solid var(--border); background: var(--surface); color: var(--text); padding: 6px 14px; border-radius: 8px; cursor: pointer; }
-    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-    button.danger { color: var(--bad); }
-    input[type=text], textarea { font: inherit; width: 100%; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
-    textarea { min-height: 60px; resize: vertical; }
-    .row { display: flex; gap: 10px; align-items: center; }
-    .grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 24px; align-items: start; }
-    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
-    .briefing h1 { font-size: 21px; } .briefing h2 { font-size: 16px; border-top: 1px solid var(--border); padding-top: 14px; }
-    .briefing table { font-size: 14px; }
-    .briefing .blocked-link { color: var(--muted, #888); font-size: 13px; word-break: break-all; }
-    .trace { list-style: none; margin: 0; padding: 0; font-size: 13px; }
-    .trace li { padding: 6px 0; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: baseline; }
-    .trace li:last-child { border-bottom: 0; }
-    .approval { margin-bottom: 14px; }
-    .approval .head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
-    details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
-    pre { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; overflow-x: auto; }
-    .error { background: var(--bad-bg); color: var(--bad); border-radius: 8px; padding: 10px 14px; }
-    .spinner { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--warn); animation: pulse 1s infinite alternate; }
-    @keyframes pulse { from { opacity: .3; } to { opacity: 1; } }
+    .caps { font-stretch: 75%; font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .09em; }
+
+    /* ---- console rail ---- */
+    .rail { background: var(--board-deep); border-bottom: 1px solid var(--board-line); }
+    .rail-inner { max-width: 1280px; margin: 0 auto; padding: 0 24px; display: flex; align-items: stretch; gap: 32px; min-height: 52px; }
+    .brand { display: flex; align-items: center; gap: 10px; color: var(--board-ink); text-decoration: none; font-stretch: 72%; font-weight: 750; font-size: 15px; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
+    .brand:hover { text-decoration: none; }
+    .brand svg { flex: none; }
+    .bays { display: flex; gap: 4px; }
+    .bays a {
+      display: flex; align-items: center; gap: 8px; padding: 0 12px; color: var(--board-muted); text-decoration: none;
+      font-stretch: 78%; font-weight: 600; font-size: 13px; letter-spacing: .08em; text-transform: uppercase;
+      border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color .15s, border-color .15s; white-space: nowrap;
+    }
+    .bays a:hover { color: var(--board-ink); }
+    .bays a.active { color: var(--buff); border-bottom-color: var(--buff); }
+    .count { font: 700 11.5px/1 var(--mono); background: var(--at-risk); color: var(--ink); padding: 3px 5px; border-radius: 1px; letter-spacing: 0; }
+    .rail-model { margin-left: auto; display: flex; align-items: center; color: var(--board-muted); font: 12px var(--mono); white-space: nowrap; }
+
+    main { max-width: 1280px; margin: 0 auto; padding: 36px 24px 96px; }
+    h1 { font-size: 30px; line-height: 1.15; font-weight: 700; font-stretch: 88%; letter-spacing: -.012em; margin: 0 0 8px; text-wrap: balance; }
+    .sub { color: var(--board-muted); margin: 0 0 28px; max-width: 72ch; }
+
+    /* A bay heading: a printed label on the board with a rule running out to the right. */
+    .bay-head { display: flex; align-items: center; gap: 12px; margin: 44px 0 10px; color: var(--board-muted); font-size: 13px; font-weight: 650; font-stretch: 75%; letter-spacing: .1em; text-transform: uppercase; }
+    .bay-head::after { content: ""; flex: 1; height: 1px; background: var(--board-line); }
+    .bay-head .aside { font-weight: 400; letter-spacing: .04em; text-transform: none; font-stretch: 90%; }
+    .bay-head:first-child { margin-top: 0; }
+
+    /* ---- strip tables: every row is a printed strip in the bay ---- */
+    .scroll { overflow-x: auto; margin: -6px -2px 0; padding: 0 2px; }
+    table.strips { width: 100%; border-collapse: separate; border-spacing: 0 5px; }
+    table.strips th { text-align: left; padding: 0 14px 0; color: var(--board-muted); font-size: 11px; font-weight: 600; font-stretch: 75%; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
+    table.strips td { background: var(--stock); padding: 11px 14px; vertical-align: middle; border-left: 1px solid var(--hair); box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .1); }
+    table.strips td:first-child { border-left: 0; border-radius: 2px 0 0 2px; background: var(--stock-deep); }
+    table.strips td:last-child { border-radius: 0 2px 2px 0; }
+    table.strips.dense td { padding: 7px 12px; font-size: 13.5px; }
+    table.strips .right { text-align: right; }
+    .empty-row td { background: transparent !important; box-shadow: none; border: 1.5px dashed var(--board-line) !important; color: var(--board-muted); padding: 18px; }
+
+    .callsign { font-weight: 650; font-size: 16px; line-height: 1.25; }
+    .field-note { display: block; margin-top: 2px; }
+    .figure { font: 500 14px var(--mono); letter-spacing: -.01em; white-space: nowrap; }
+
+    /* The risk field: colored by band, the score in the largest numerals on the strip. */
+    td.assess { width: 1%; white-space: nowrap; }
+    td.assess.band-healthy { background: var(--healthy); color: #fff; }
+    td.assess.band-at-risk { background: var(--at-risk); color: var(--ink); }
+    td.assess.band-critical { background: var(--critical); color: #fff; }
+    td.assess.none { background: repeating-linear-gradient(-45deg, var(--stock) 0 6px, var(--stock-deep) 6px 7px); }
+    td.assess a { color: inherit; text-decoration: none; display: flex; align-items: baseline; gap: 8px; }
+    td.assess a:hover .band { text-decoration: underline; text-underline-offset: 3px; }
+    .score { font-size: 30px; line-height: 1; font-weight: 700; font-stretch: 85%; letter-spacing: -.02em; }
+    .of { font: 500 12px var(--mono); opacity: .8; margin-left: -6px; }
+    .band { font-size: 12px; font-weight: 700; font-stretch: 75%; letter-spacing: .1em; text-transform: uppercase; }
+    td.assess .when { font: 11.5px var(--mono); opacity: .85; margin-top: 4px; }
+
+    /* ---- marks: printed status marks, square, never pills ---- */
+    .tag {
+      display: inline-block; vertical-align: 1px; padding: 3px 6px 2px; border: 1.5px solid currentColor; border-radius: 1px;
+      font: 700 10.5px/1 var(--sans); font-stretch: 75%; letter-spacing: .09em; text-transform: uppercase; white-space: nowrap; color: var(--t-neutral);
+    }
+    .s-healthy, .s-executed, .s-completed, .s-allowed, .s-renewed { color: var(--t-ok); }
+    .s-at-risk, .s-pending, .s-awaiting_approval, .s-running { color: var(--t-warn); }
+    .s-critical, .s-failed, .s-denied, .s-churned { color: var(--t-bad); }
+    .s-approved, .s-rejected { color: var(--t-ink); }  /* human decisions: clearance ink */
+    .tag.solid { background: var(--ink); border-color: var(--ink); color: var(--stock, var(--buff)); }
+    .ink { color: var(--t-ink); font-weight: 700; }
+    .ink-note { font-style: italic; }
+    .ink-note::before { content: "\201C"; color: var(--t-ink); font-weight: 800; font-style: normal; margin-right: 1px; }
+    .ink-note::after { content: "\201D"; color: var(--t-ink); font-weight: 800; font-style: normal; }
+    .outcome { font-weight: 700; font-size: 13px; }
+    .outcome.s-neutral { color: var(--muted); }
+    .nowrap { white-space: nowrap; }
+    table.audit td.args { width: 34%; min-width: 280px; overflow-wrap: anywhere; font-size: 11.5px; color: var(--muted); }
+    table.audit td:nth-child(7) { min-width: 170px; }
+    table.accounts td:first-child { width: 26%; }
+    table.accounts td:nth-child(2), table.accounts td:nth-child(3) { width: 11%; }
+    table.accounts td:nth-child(5) { width: 14%; }
+    table.accounts td.right { width: 1%; }
+    table.accounts td.assess { min-width: 220px; }
+    table.memory td:nth-child(4) { min-width: 240px; }
+    table.memory td.assess { width: 150px; white-space: normal; }
+    table.memory td.assess .score { font-size: 22px; }
+    table.memory td.assess .drivers { font-size: 12px; opacity: .88; margin-top: 4px; }
+
+    /* ---- controls ---- */
+    button, .btn {
+      font: 650 12.5px/1 var(--sans); font-stretch: 80%; letter-spacing: .08em; text-transform: uppercase;
+      padding: 10px 16px; border: 1.5px solid var(--ink); border-radius: 2px; background: transparent; color: var(--ink);
+      cursor: pointer; transition: background-color .15s, color .15s, border-color .15s; white-space: nowrap;
+    }
+    button:hover { background: var(--ink); color: var(--stock, var(--buff)); }
+    button:active { transform: translateY(1px); }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    button.approve { background: var(--clear); border-color: var(--clear); color: #fff; }
+    button.approve:hover { background: var(--clear-deep); border-color: var(--clear-deep); }
+    button.reject { border-color: var(--clear); color: var(--clear); }
+    button.reject:hover { background: var(--clear); color: #fff; }
+    input[type=text], textarea {
+      font: 15px/1.4 var(--sans); width: 100%; padding: 9px 11px; color: var(--ink); caret-color: var(--ink);
+      background: var(--fresh); border: 1px solid rgba(0, 0, 0, .28); border-radius: 2px;
+    }
+    input::placeholder, textarea::placeholder { color: #6f6a5c; }
+    textarea { min-height: 64px; resize: vertical; }
+
+    /* The instruction slot: a recessed tray on the board with a blank strip in it. */
+    .slot { display: flex; padding: 6px; background: var(--board-deep); border: 1px solid var(--board-line); border-radius: 3px; margin-bottom: 40px; box-shadow: inset 0 2px 6px rgba(0, 0, 0, .35); }
+    .slot input[type=text] { font-size: 16px; height: 50px; padding: 0 16px; border: 0; border-radius: 2px 0 0 2px; }
+    .slot input[type=text]:focus-visible { outline: 2px solid var(--lit); outline-offset: -2px; }
+    .slot button { height: 50px; padding: 0 24px; background: var(--buff); border-color: var(--buff); color: var(--ink); border-radius: 0 2px 2px 0; font-size: 13.5px; }
+    .slot button:hover { background: var(--lit); border-color: var(--lit); color: var(--ink); }
+
+    /* ---- run page ---- */
+    .status-rail { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 16px; margin-bottom: 24px; }
+    .risk-plate { display: flex; align-items: baseline; gap: 10px; padding: 8px 14px 9px; border-radius: 2px; }
+    .risk-plate.band-healthy { background: var(--healthy); color: #fff; }
+    .risk-plate.band-at-risk { background: var(--at-risk); color: var(--ink); }
+    .risk-plate.band-critical { background: var(--critical); color: #fff; }
+    .risk-plate .score { font-size: 38px; }
+    .usage { font: 12px var(--mono); color: var(--board-muted); }
+    .lamp { width: 10px; height: 10px; background: var(--lit); border-radius: 1px; box-shadow: 0 0 0 3px rgba(255, 211, 92, .18); animation: lamp 1.1s ease-in-out infinite alternate; flex: none; }
+    @keyframes lamp { from { opacity: .35; } to { opacity: 1; } }
+
+    .grid { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 32px; align-items: start; }
+    .sheet { background: var(--stock); border-radius: 2px; padding: 30px 36px 34px; border: 1px solid #0c110f; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, .08); }
+    .waiting { border: 1.5px dashed var(--board-line); border-radius: 3px; padding: 22px 24px; color: var(--board-muted); max-width: 64ch; }
+
+    /* Briefings are model output: plain printed type, nothing that looks like a control. */
+    .briefing > * { max-width: 74ch; }
+    .briefing { font-size: 15px; line-height: 1.6; }
+    .briefing h1 { font-size: 24px; font-stretch: 90%; margin: 0 0 14px; }
+    .briefing h2 { font-size: 17px; font-weight: 700; font-stretch: 90%; margin: 30px 0 8px; padding-top: 16px; border-top: 1px solid var(--hair); }
+    .briefing h3 { font-size: 15px; margin: 22px 0 6px; }
+    .briefing p, .briefing ul, .briefing ol { margin: 0 0 12px; }
+    .briefing li { margin-bottom: 4px; }
+    .briefing code { font: 13px var(--mono); background: rgba(0, 0, 0, .06); padding: 1px 4px; border-radius: 2px; }
+    .briefing table { border-collapse: collapse; font-size: 14px; margin: 6px 0 16px; max-width: 100%; }
+    .briefing th, .briefing td { text-align: left; padding: 6px 12px 6px 0; border-bottom: 1px solid var(--hair); vertical-align: top; }
+    .briefing th { font-size: 11px; font-weight: 650; font-stretch: 75%; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+    .briefing .blocked-link { font: 12px var(--mono); color: var(--muted); background: rgba(0, 0, 0, .05); padding: 1px 4px; word-break: break-all; }
+
+    /* The trace: one thin strip per tool call. While a run is live, the newest strip is lit. */
+    .trace { list-style: none; margin: 0; padding: 5px; background: var(--board-deep); border: 1px solid var(--board-line); border-radius: 3px; display: grid; gap: 3px; }
+    .trace li { display: grid; grid-template-columns: 76px minmax(0, 1fr); align-items: stretch; background: var(--stock); border-radius: 2px; font-size: 13px; transition: opacity .3s; }
+    .trace .t-time { background: var(--stock-deep); font: 12px var(--mono); padding: 7px 8px; border-radius: 2px 0 0 2px; display: flex; align-items: center; gap: 6px; }
+    .trace .t-call { padding: 6px 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+    .trace .t-call .mono { overflow-wrap: anywhere; }
+    .trace .t-call .signed { flex-basis: 100%; color: var(--clear); font-weight: 700; font-size: 12.5px; overflow-wrap: anywhere; }
+    .is-running .trace li { opacity: .62; }
+    .is-running .trace li:last-child { opacity: 1; }
+    .is-running .trace li:last-child .t-time { background: var(--lit); }
+    .is-running .trace li:last-child .t-time::before { content: ""; width: 7px; height: 7px; background: var(--ink); border-radius: 1px; animation: lamp .8s ease-in-out infinite alternate; }
+    .trace-empty { color: var(--board-muted); font-size: 13px; padding: 10px 12px; }
+    .run-aside { display: flex; flex-direction: column; }
+    .is-running .trace-block { order: -1; margin-bottom: 36px; }
+    .is-running .trace-well { display: flex; flex-direction: column-reverse; max-height: 470px; overflow-y: auto; border-radius: 3px; scrollbar-width: thin; }
+    /* Accounts with a proposal awaiting clearance are cocked out of line in the bay, as controllers do. */
+    table.accounts tr.cocked td { transform: translateX(14px); }
+    table.accounts:has(tr.cocked) { width: calc(100% - 14px); }
+
+    /* ---- proposals: tall strips with a clearance box at the foot ---- */
+    /* Proposals sit in a holder tray: a recessed rail on the board, like the instruction slot. */
+    .holder { background: var(--board-deep); border: 1px solid var(--board-line); border-radius: 3px; padding: 6px; box-shadow: inset 0 2px 6px rgba(0, 0, 0, .35); display: grid; gap: 6px; }
+    .approval { border-radius: 2px; background: var(--stock); border: 1px solid #0c110f; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, .1); overflow: hidden; }
+    .approval-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--stock-deep); padding: 10px 16px; }
+    .approval-type { margin: 0; font-size: 13px; font-weight: 750; font-stretch: 75%; letter-spacing: .1em; text-transform: uppercase; }
+    .approval-body { padding: 12px 16px 14px; }
+    .approval-meta { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+    .approval-summary { margin: 0 0 10px; font-size: 15px; line-height: 1.45; }
+    .approval-rationale { margin: 0 0 10px; font-size: 13.5px; }
+    .approval-rationale strong { font-size: 11px; font-stretch: 75%; letter-spacing: .09em; text-transform: uppercase; margin-right: 4px; }
+    details.write summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); padding: 2px 0; }
+    details.write summary::-webkit-details-marker { display: none; }
+    details.write summary::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .15s; }
+    details.write[open] summary::before { transform: rotate(45deg); }
+    details.write summary:hover { color: var(--ink); }
+    details.write pre { margin: 8px 0 6px; padding: 10px 12px; background: rgba(0, 0, 0, .07); border-left: 0; border-radius: 2px; overflow-x: auto; font-size: 12px; line-height: 1.5; }
+    .clearance { border-top: 1.5px dashed var(--hair); padding: 12px 16px 16px; background: color-mix(in srgb, var(--stock) 70%, var(--fresh)); }
+    .clearance form { display: grid; gap: 8px; }
+    .clearance input[type=text], .clearance textarea { color: var(--clear); caret-color: var(--clear); }
+    .clearance .actions { display: flex; gap: 8px; }
+    .clearance .wait-note { margin: 0; font-size: 13px; color: var(--muted); }
+    .cleared { margin: 0; font-size: 14px; }
+    .cleared strong { font-weight: 750; color: var(--clear); }
+    .cleared .note { display: block; margin-top: 6px; padding-left: 10px; border-left: 1px solid var(--clear); font-style: italic; color: var(--ink); }
+    .executed-note { margin: 8px 0 0; font-size: 13px; color: var(--t-ok); font-weight: 600; }
+    .approval.st-rejected .approval-summary { text-decoration: line-through; text-decoration-color: var(--clear); text-decoration-thickness: 1.5px; }
+
+    .error { background: #f7d6cf; color: #8e1d10; border-radius: 2px; padding: 10px 14px; font-size: 14px; }
+    .approval .error { margin: 8px 0 0; }
+
+    .pending-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 16px 20px; align-items: start; }
+    .pending-grid .follow { display: inline-block; font-size: 13px; margin: 8px 0 0 2px; }
+    .quiet-bay { border: 1.5px dashed var(--board-line); border-radius: 3px; padding: 22px 24px; color: var(--board-muted); }
+
+    @media (max-width: 1000px) {
+      .grid { grid-template-columns: minmax(0, 1fr); }
+    }
+    @media (max-width: 760px) {
+      .rail-inner { flex-wrap: wrap; gap: 0 16px; padding: 0 16px; }
+      .brand { min-height: 46px; }
+      .bays { order: 3; width: calc(100% + 32px); overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 0 4px; }
+      .bays a { padding: 12px 12px 11px; }
+      .rail-model { font-size: 11px; }
+      main { padding: 24px 16px 64px; }
+      h1 { font-size: 25px; }
+      .slot { flex-direction: column; gap: 6px; }
+      .slot input[type=text], .slot button { border-radius: 2px; }
+      .sheet { padding: 22px 18px; }
+      .pending-grid { grid-template-columns: 1fr; }
+      /* Account strips restack into two-column cards of fields. */
+      table.accounts, table.accounts tbody { display: block; width: 100%; }
+      table.accounts tr.cocked td { transform: none; }
+      table.accounts:has(tr.cocked) { width: 100%; }
+      table.accounts tr.cocked { margin-left: 12px; }
+      table.accounts thead { display: none; }
+      table.accounts tr { display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 8px; border-radius: 2px; overflow: hidden; }
+      table.accounts td { width: auto !important; min-width: 0 !important; border-left: 0; border-top: 1px solid var(--hair); border-radius: 0 !important; }
+      table.accounts td:nth-child(2), table.accounts td:nth-child(5) { border-right: 1px solid var(--hair); }
+      .briefing table { display: block; overflow-x: auto; }
+      table.accounts td[data-label]::before { content: attr(data-label); display: block; font-size: 10.5px; font-weight: 600; font-stretch: 75%; letter-spacing: .1em; text-transform: uppercase; opacity: .75; margin-bottom: 3px; }
+      table.accounts td:first-child, table.accounts td.assess { grid-column: span 2; border-top: 0; }
+      table.accounts td.assess { width: auto; }
+      table.accounts td:last-child { text-align: left; }
+    }
+    @media (max-width: 420px) {
+      .rail-model { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before { animation: none !important; transition: none !important; }
+    }
   </style>
 </head>
 <body>
-  <header>
-    <div class="bar">
-      <a class="brand" href="/">Renewal Risk Orchestrator</a>
-      <nav>
+  <header class="rail">
+    <div class="rail-inner">
+      <a class="brand" href="/">
+        <svg width="22" height="14" viewBox="0 0 22 14" aria-hidden="true"><rect x=".75" y=".75" width="20.5" height="12.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x=".75" y=".75" width="6" height="12.5" fill="#efe5c4"/><path d="M10 5h8M10 9h5" stroke="currentColor" stroke-width="1.5"/></svg>
+        Renewal Risk Orchestrator
+      </a>
+      <nav class="bays" aria-label="Main">
         {% set path = request.url.path %}
         <a href="/" class="{{ 'active' if path == '/' or path.startswith('/runs') }}">Accounts</a>
-        <a href="/approvals" class="{{ 'active' if path.startswith('/approvals') }}">Approvals{% if pending_count %} <span class="badge b-pending">{{ pending_count }}</span>{% endif %}</a>
+        <a href="/approvals" class="{{ 'active' if path.startswith('/approvals') }}">Approvals{% if pending_count %} <span class="count">{{ pending_count }}</span>{% endif %}</a>
         <a href="/memory" class="{{ 'active' if path.startswith('/memory') }}">Memory</a>
         <a href="/audit" class="{{ 'active' if path.startswith('/audit') }}">Audit log</a>
       </nav>
-      <span class="meta">{{ model }}</span>
+      <span class="rail-model">{{ model }}</span>
     </div>
   </header>
   <main>{% block content %}{% endblock %}</main>
