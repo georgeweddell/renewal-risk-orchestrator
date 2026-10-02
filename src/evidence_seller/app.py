@@ -19,6 +19,8 @@ from x402.http.middleware.fastapi import PaymentMiddlewareASGI
 from x402.http.types import RouteConfig
 from x402.mechanisms.evm.exact import ExactEvmServerScheme
 
+from evidence_seller.news import NEWS
+
 PORT = 8402
 NETWORK = "eip155:84532"  # Base Sepolia. Testnet only, and not configurable on purpose.
 FACILITATOR_URL = "https://x402.org/facilitator"  # the public testnet facilitator; no API key
@@ -29,13 +31,6 @@ PRICE = "$0.01"
 PAY_TO = dotenv_values(Path(__file__).resolve().parents[2] / ".env").get("X402_SELLER_ADDRESS")
 if not PAY_TO:
     raise SystemExit("X402_SELLER_ADDRESS is not set in .env (run learning/make_test_wallet.py).")
-
-NEWS = {
-    "halcyon.example": [
-        {"date": "2026-09-14", "headline": "Halcyon announces a hiring freeze across its operations team"},
-        {"date": "2026-08-30", "headline": "Halcyon's CFO departs; interim CFO named"},
-    ],
-}
 
 server = x402ResourceServer(HTTPFacilitatorClient(FacilitatorConfig(url=FACILITATOR_URL)))
 server.register(NETWORK, ExactEvmServerScheme())

@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     tickets_backend: Backend | None = None
     usage_backend: Backend | None = None
     rro_max_agent_turns: int = 25
+
+    # Paid evidence over x402 (testnet only). Off by default: with it off, the evidence
+    # server isn't started and nothing about a run changes.
+    rro_payments_enabled: bool = False
+    evidence_backend: Literal["mock", "x402"] | None = None  # default: mock in mock mode, x402 in live mode
+    x402_buyer_private_key: SecretStr | None = None  # passed only to the evidence server, never logged
     # Name recorded against approvals made from the web UI or CLI (Slack records the real Slack user).
     rro_approver_name: str = "Demo approver"
 
@@ -62,7 +68,14 @@ class Settings(BaseSettings):
     # Locations (override for tests)
     rro_home: Path = PROJECT_ROOT
 
+    @property
+    def systems(self) -> tuple[str, ...]:
+        """The MCP servers to start: the four core systems, plus evidence when payments are on."""
+        return (*SYSTEMS, "evidence") if self.rro_payments_enabled else SYSTEMS
+
     def backend_for(self, system: str) -> str:
+        if system == "evidence":
+            return self.evidence_backend or ("x402" if self.rro_mode == "live" else "mock")
         return getattr(self, f"{system}_backend", None) or self.rro_mode
 
     def value(self, name: str) -> str | None:
