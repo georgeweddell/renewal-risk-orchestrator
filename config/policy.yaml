@@ -41,3 +41,21 @@ systems:
 # before it ever reaches a human.
 limits:
   pricing_exception_max_pct: 25
+
+# Paid evidence (x402). Used only when RRO_PAYMENTS_ENABLED=true; off by default.
+# The model can only propose a payment. Before signing, the executor checks the
+# seller's live price request against these rules (src/rro/governance/spend.py):
+#   - testnet only: the network must be a known testnet, or this file won't load
+#   - only the listed token, and only to a listed seller at that seller's own address
+#   - a run never spends more than its budget, even with a human's approval
+#   - at or under the threshold, policy approves; above it, a human must
+# Amounts are dollars, in quotes; the code converts them exactly to USDC units.
+payments:
+  network: eip155:84532                                 # Base Sepolia (testnet)
+  asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e"   # USDC on Base Sepolia
+  budget_per_run_usd: "0.05"
+  auto_approve_up_to_usd: "0.01"
+  payees:
+    - name: Evidence seller (local, testnet)
+      url: http://127.0.0.1:8402/news/
+      pay_to: "0xaa544d7D4b939Ddf68bF3217F57CBE2AbC95A990"

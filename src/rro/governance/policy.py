@@ -14,6 +14,8 @@ from typing import Any, Literal
 
 import yaml
 
+from rro.governance.spend import SpendRules
+
 Scope = Literal["read", "write"]
 Content = Literal["trusted", "untrusted"]
 # (approval_id, system, tool, args) -> is there an approved action matching exactly this call?
@@ -38,11 +40,13 @@ class Policy:
         approval_check: ApprovalCheck = _no_approvals,
         limits: dict[str, Any] | None = None,
         content: dict[str, Content] | None = None,
+        spend: SpendRules | None = None,
     ):
         self._scopes = scopes
         self._approval_check = approval_check
         self.limits = limits or {}
         self._content = content or {}
+        self.spend = spend  # None: no payments section, so no payment is ever allowed
 
     @classmethod
     def load(cls, path: Path, approval_check: ApprovalCheck = _no_approvals) -> Policy:
@@ -59,7 +63,8 @@ class Policy:
                     if (system, tool) in scopes:
                         raise ValueError(f"{system}.{tool} is listed under more than one scope in {path.name}")
                     scopes[(system, tool)] = scope
-        return cls(scopes, approval_check, raw.get("limits") or {}, content)
+        spend = SpendRules.from_config(raw["payments"]) if raw.get("payments") else None
+        return cls(scopes, approval_check, raw.get("limits") or {}, content, spend)
 
     def scope_of(self, system: str, tool: str) -> Scope | None:
         return self._scopes.get((system, tool))
