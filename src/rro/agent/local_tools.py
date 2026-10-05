@@ -135,7 +135,10 @@ def propose_evidence_tool(sellers: list[str]) -> dict[str, Any]:
             "evidence would change your recommendation. Testnet money; small purchases are approved by the "
             "spend policy and bought immediately (the news comes back as untrusted data); larger ones go to a "
             "human and are bought only after approval. The account's domain, the price and the payee come "
-            "from the CRM and the policy, not from you. Returns the data, or the approval ID, or why it was refused."
+            "from the CRM and the policy, not from you. Returns the data, or the approval ID, or why it was refused. "
+            "Before buying, check memory__find_similar_decisions with action_type evidence_purchase: past purchases "
+            "on similar accounts carry an outcome a person recorded (useful / not_useful, with a note). If similar "
+            "purchases weren't useful, don't buy unless this case is different, and say why in the briefing."
         ),
         "strict": True,
         "input_schema": {

@@ -125,6 +125,87 @@ async def test_a_rejected_purchase_frees_the_budget(settings):
     assert not is_error and json.loads(second)["status"] == "pending_human_approval"
 
 
+# --- the payment receipt in the audit log -------------------------------------------------
+def receipts(rt, run_id="run-1"):
+    return [json.loads(r["args_json"]) | {"reason": r["reason"], "actor": r["actor"]}
+            for r in rt.store.audit_for_run(run_id) if r["system"] == "payments"]  # fmt: skip
+
+
+async def test_every_payment_leaves_one_receipt_with_its_reason(settings):
+    rt = paying_runtime(settings)
+    async with rt.gateway as gateway:
+        tools = tools_for(rt, gateway)
+        await tools.call("score_renewal_risk", SCORE)
+        await buy(tools)
+    (receipt,) = receipts(rt)
+    assert receipt["actor"] == "executor" and receipt["reason"] == "Check for layoffs"
+    assert receipt["approved_by"] == "policy" and receipt["status"] == "paid"
+    assert receipt["paid_usd"] == "$0.01" and receipt["transaction"].startswith("0xsimulated")
+
+
+async def test_a_failed_purchase_is_receipted_as_nothing_paid(settings):
+    rt = paying_runtime(settings)
+    async with rt.gateway as gateway:
+        tools = tools_for(rt, gateway)
+        await tools.call("score_renewal_risk", SCORE | {"account_slug": "brightwave-health"})  # the seller has no news on it
+        await tools.call("propose_evidence_purchase", {"account_slug": "brightwave-health", "seller": FIRST, "reason": "x"})
+    (receipt,) = receipts(rt)
+    assert receipt["status"] == "failed, nothing paid" and receipt["paid_units"] == 0
+
+
+# --- memory: did the purchase pay off? (your piece in approvals.py makes these pass) ------
+def purchases_in_memory(rt):
+    return [d for d in rt.memory.all() if d.action_type == "evidence_purchase"]
+
+
+async def test_a_purchase_is_remembered_in_code_built_words(settings):
+    rt = paying_runtime(settings)
+    async with rt.gateway as gateway:
+        tools = tools_for(rt, gateway)
+        await tools.call("score_renewal_risk", SCORE)
+        await buy(tools)
+    (memory,) = purchases_in_memory(rt)
+    assert memory.proposal == "Bought news on halcyonrobotics.example from 127.0.0.1:8402, up to $0.01 (testnet)"
+    assert memory.approver == "policy" and memory.outcome == "pending"
+    assert "Check for layoffs" not in str(memory) and "hiring freeze" not in str(memory)  # no model or seller text
+
+
+async def test_a_person_rates_the_purchase_and_later_runs_can_find_it(settings, monkeypatch):
+    rt = paying_runtime(settings)
+    async with rt.gateway as gateway:
+        tools = tools_for(rt, gateway)
+        await tools.call("score_renewal_risk", SCORE)
+        await buy(tools)
+    (memory,) = purchases_in_memory(rt)
+    rt.approval_service().rate_evidence(memory.id, "useful", by="Priya Shah", note="The hiring freeze explained the usage drop")
+    (rated,) = purchases_in_memory(rt)
+    assert rated.outcome == "useful" and rated.outcome_note == "The hiring freeze explained the usage drop"
+    assert any(r["actor"] == "human:Priya Shah" and r["tool"] == "record_outcome" for r in rt.store.audit_for_run("run-1"))
+
+    from mcp_servers.memory import server  # what the agent sees through memory__find_similar_decisions
+
+    monkeypatch.setenv("RRO_MEMORY_DB", str(settings.memory_db))
+    found = server.find_similar_decisions(drivers=["usage_drop", "open_p1"], action_type="evidence_purchase")
+    assert found["matches"][0]["outcome"] == "useful"
+
+
+async def test_a_rating_needs_a_known_outcome_and_a_reason(settings):
+    from rro.governance.approvals import ApprovalError
+
+    rt = paying_runtime(settings)
+    async with rt.gateway as gateway:
+        tools = tools_for(rt, gateway)
+        await tools.call("score_renewal_risk", SCORE)
+        await buy(tools)
+    (memory,) = purchases_in_memory(rt)
+    with pytest.raises(ApprovalError):
+        rt.approval_service().rate_evidence(memory.id, "great", by="Priya Shah", note="x")
+    with pytest.raises(ApprovalError):
+        rt.approval_service().rate_evidence(memory.id, "useful", by="Priya Shah", note="  ")
+    with pytest.raises(ApprovalError):  # only purchases are rated this way, not renewal decisions
+        rt.approval_service().rate_evidence(purchases_in_memory(rt)[0].id - 1, "useful", by="Priya Shah", note="x")
+
+
 # --- the trifecta gate ---------------------------------------------------------------------
 def test_a_policy_approved_payment_tool_is_only_safe_with_spend_rules(tmp_path):
     path = tmp_path / "policy.yaml"

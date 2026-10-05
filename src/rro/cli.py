@@ -170,7 +170,7 @@ def memory(slug: Annotated[str | None, typer.Argument(help="Only this account.")
     """Show the decision memory: past proposals, human decisions and outcomes."""
     rt = _runtime()
     decisions = rt.memory.for_account(slug) if slug else rt.memory.all()
-    table = Table("Date", "Account", "Action", "Risk", "Proposal", "Decision", "Outcome")
+    table = Table("ID", "Date", "Account", "Action", "Risk", "Proposal", "Decision", "Outcome")
     for d in decisions:
         decision = f"{_status(d.status)} [dim]{d.approver}[/]"
         if d.note:
@@ -178,8 +178,24 @@ def memory(slug: Annotated[str | None, typer.Argument(help="Only this account.")
         outcome = d.outcome or "-"
         if d.outcome_note:
             outcome += f"\n[dim]{d.outcome_note}[/]"
-        table.add_row(d.decided_on, d.account_name, d.action_type, f"{_band(d.risk_band)} {d.risk_score}", d.proposal, decision, outcome)
+        table.add_row(str(d.id), d.decided_on, d.account_name, d.action_type, f"{_band(d.risk_band)} {d.risk_score}", d.proposal, decision, outcome)
     console.print(table)
+
+
+@app.command("rate-evidence")
+def rate_evidence(
+    decision_id: Annotated[int, typer.Argument(help="The purchase's ID in `rro memory`.")],
+    outcome: Annotated[str, typer.Argument(help="useful or not_useful")],
+    note: Annotated[str, typer.Option(help="Why. Required: future runs read it before buying.")],
+    by: Annotated[str | None, typer.Option(help="Who is rating. Defaults to RRO_APPROVER_NAME.")] = None,
+) -> None:
+    """Record whether a paid evidence purchase helped, so later runs can decide whether to buy again."""
+    rt = _runtime()
+    try:
+        rt.approval_service().rate_evidence(decision_id, outcome, by=by or rt.settings.rro_approver_name, note=note)
+    except ApprovalError as exc:
+        _fail(str(exc))
+    console.print(f"[green]Recorded[/] purchase {decision_id} as {outcome}.")
 
 
 # --- governance ------------------------------------------------------------------

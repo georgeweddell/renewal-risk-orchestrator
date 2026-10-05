@@ -20,7 +20,7 @@ from mcp_servers.memory.store import MemoryStore
 
 Driver = Literal["usage_drop", "open_p1", "open_p2", "renewal_soon"]
 Band = Literal["healthy", "at-risk", "critical"]
-ActionType = Literal["crm_risk_update", "pricing_exception"]
+ActionType = Literal["crm_risk_update", "pricing_exception", "evidence_purchase"]
 
 mcp = MCPServer(
     "memory",
