@@ -64,7 +64,10 @@ def assess(specs: Iterable[ToolSpec], policy: Policy, local_effects: dict[str, s
     private = [s.qualified_name for s in visible]  # every connected system holds company data
     untrusted = [s.qualified_name for s in visible if policy.content_of(s.system) == "untrusted"]
     writes = [s.qualified_name for s in visible if s.scope != "read" or s.read_only_hint is not True]
-    writes += [name for name in local_names if local_effects.get(name) not in SAFE_LOCAL_EFFECTS]
+    # "policy" (a payment the spend policy may approve alone) is only safe when there are spend rules:
+    # then it can only pay allowlisted sellers, within budget, and sends only a CRM-sourced domain.
+    safe = SAFE_LOCAL_EFFECTS | ({"policy"} if policy.spend else set())
+    writes += [name for name in local_names if local_effects.get(name) not in safe]
     return TrifectaReport(private, untrusted, writes)
 
 

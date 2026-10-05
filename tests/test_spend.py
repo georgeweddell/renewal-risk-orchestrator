@@ -71,6 +71,9 @@ def test_a_seller_cannot_redirect_payment_to_another_address(rules):
         "http://127.0.0.1:8402.evil.example/news/x",  # lookalike host
         "https://127.0.0.1:8402/news/halcyon.example",  # different scheme
         "http://127.0.0.1:8402/admin/pay",  # same seller, path we didn't list
+        "http://127.0.0.1:8402/news/../admin/pay",  # passes a prefix check, then becomes /admin/pay
+        "http://127.0.0.1:8402/news/x?leak=secret",  # a query string carries extra data out
+        "http://user@127.0.0.1:8402/news/x",  # a login part
     ],
 )
 def test_only_allowlisted_sellers_are_paid(rules, url):

@@ -30,6 +30,11 @@ from rro.governance.gateway import SEP, ToolGateway
 from rro.risk import RiskAssessment
 
 
+POLICY_APPROVER = "policy"  # decided_by for payments the spend policy approves on its own
+# Decision memory holds renewal decisions. Evidence purchases are recorded separately (Phase 5).
+REMEMBERED_ACTIONS = {"crm_risk_update", "pricing_exception"}
+
+
 class ApprovalError(RuntimeError):
     pass
 
@@ -145,8 +150,20 @@ class ApprovalService:
 
     async def approve(self, approval_id: str, *, by: str, note: str | None = None) -> Approval:
         self._decide(approval_id, "approved", by=by, note=note)
-        approval = self.approvals.get(approval_id)
+        return await self._execute(approval_id, by, note)
 
+    async def approve_by_policy(self, approval_id: str, *, reason: str) -> Approval:
+        """Approve without a human, because the spend policy allows it (a payment under the threshold).
+
+        The record is the same as a human approval, with the same payload hash, so the
+        executor and the policy check are unchanged. Only `decided_by` and the audit
+        actor say "policy", so the log shows no human was involved.
+        """
+        self._decide(approval_id, "approved", by=POLICY_APPROVER, note=reason, actor=POLICY_APPROVER)
+        return await self._execute(approval_id, POLICY_APPROVER, reason)
+
+    async def _execute(self, approval_id: str, by: str, note: str | None) -> Approval:
+        approval = self.approvals.get(approval_id)
         outcome = await self.gateway.call(
             f"{approval.system}{SEP}{approval.tool}",
             approval.args,
@@ -156,7 +173,7 @@ class ApprovalService:
         )
         status = "failed" if outcome.is_error else "executed"
         self.approvals._update(approval.id, status=status, executed_at=utcnow(), result_text=outcome.text[:2000])
-        if status == "executed":
+        if status == "executed" and approval.action_type in REMEMBERED_ACTIONS:
             self._remember(approval, "approved", by, note, outcome="pending")
         return self.approvals.get(approval.id)
 
@@ -165,10 +182,11 @@ class ApprovalService:
             raise ApprovalError("A rejection needs a reason. It's what future runs learn from.")
         self._decide(approval_id, "rejected", by=by, note=note)
         approval = self.approvals.get(approval_id)
-        self._remember(approval, "rejected", by, note, outcome=None)
+        if approval.action_type in REMEMBERED_ACTIONS:
+            self._remember(approval, "rejected", by, note, outcome=None)
         return approval
 
-    def _decide(self, approval_id: str, status: str, *, by: str, note: str | None) -> None:
+    def _decide(self, approval_id: str, status: str, *, by: str, note: str | None, actor: str | None = None) -> None:
         approval = self.approvals.get(approval_id)
         if approval.status != "pending":
             raise ApprovalError(f"{approval_id} is already {approval.status}")
@@ -177,7 +195,7 @@ class ApprovalService:
             self.store.complete_if_decided(approval.run_id)
         self.store.add_audit(
             AuditEntry(
-                run_id=approval.run_id, actor=f"human:{by}", system="approvals",
+                run_id=approval.run_id, actor=actor or f"human:{by}", system="approvals",
                 tool="approve" if status == "approved" else "reject", scope="decision", decision="allowed",
                 reason=note, args={"approval_id": approval_id, "summary": approval.summary}, approval_id=approval_id,
             )  # fmt: skip

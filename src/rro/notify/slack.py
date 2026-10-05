@@ -32,7 +32,11 @@ APPROVE_ACTION = "rro_approve"
 REJECT_ACTION = "rro_reject"
 REJECT_MODAL = "rro_reject_modal"
 REASON_BLOCK, REASON_INPUT = "reason_block", "reason"
-ACTION_LABELS = {"crm_risk_update": "CRM risk update", "pricing_exception": "Pricing exception"}
+ACTION_LABELS = {
+    "crm_risk_update": "CRM risk update",
+    "pricing_exception": "Pricing exception",
+    "evidence_purchase": "Evidence purchase",
+}
 
 
 class SlackNotifier:

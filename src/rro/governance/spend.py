@@ -15,6 +15,7 @@ own it, and converted here exactly.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -38,6 +39,7 @@ class Payee:
     name: str
     url: str  # where its data lives; requests must be under this
     pay_to: str
+    max_price_units: int  # the most one purchase from this seller may cost; what an approval allows
 
     def serves(self, url: str) -> bool:
         """Same scheme and host:port exactly, and the path under ours.
@@ -69,7 +71,13 @@ class SpendRules:
                 f"{', '.join(f'{k} ({v})' for k, v in TESTNETS.items())}."
             )
         payees = tuple(
-            Payee(name=str(p["name"]), url=str(p["url"]), pay_to=str(p["pay_to"])) for p in raw.get("payees") or []
+            Payee(
+                name=str(p["name"]),
+                url=str(p["url"]),
+                pay_to=str(p["pay_to"]),
+                max_price_units=usd_to_units(p["max_price_usd"], f"payees.{p['name']}.max_price_usd"),
+            )
+            for p in raw.get("payees") or []
         )
         return cls(
             network=network,
@@ -114,6 +122,8 @@ def authorize_payment(request: PaymentRequest, committed_units: int, rules: Spen
         return PaymentDecision.refuse(f"asset {request.asset} isn't the allowed token ({rules.asset})")
     if request.amount_units <= 0:
         return PaymentDecision.refuse("amount must be above zero")
+    if not _plain_url(request.url):
+        return PaymentDecision.refuse(f"{request.url!r} isn't a plain URL (no ../, query, fragment or login part)")
 
     payee = next((p for p in rules.payees if p.serves(request.url)), None)
     if payee is None:
@@ -153,6 +163,21 @@ def usd_to_units(value: Any, field: str = "amount") -> int:
 
 def units_to_usd(units: int) -> str:
     return f"${Decimal(units).scaleb(-USDC_DECIMALS).normalize():f}"
+
+
+_URL_SEGMENT = re.compile(r"^[A-Za-z0-9._~-]+$")
+
+
+def _plain_url(url: str) -> bool:
+    """http(s), a host, and simple path segments only. "/news/../admin" would pass a prefix
+    check and then be tidied into "/admin" by the HTTP client, so dot segments are refused."""
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.hostname or "@" in parts.netloc:
+        return False
+    if parts.query or parts.fragment or "?" in url or "#" in url:
+        return False
+    segments = [s for s in parts.path.split("/") if s]
+    return all(_URL_SEGMENT.match(s) and s not in (".", "..") for s in segments)
 
 
 def _same_address(a: str, b: str) -> bool:

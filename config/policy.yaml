@@ -66,3 +66,4 @@ payments:
     - name: Evidence seller (local, testnet)
       url: http://127.0.0.1:8402/news/
       pay_to: "0xaa544d7D4b939Ddf68bF3217F57CBE2AbC95A990"
+      max_price_usd: "0.01"   # the most one purchase may cost; the executor won't sign for more

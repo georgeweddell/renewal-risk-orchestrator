@@ -25,7 +25,7 @@ from rro.agent.llm import LLM
 from rro.agent.local_tools import LocalTools
 from rro.agent.prompts import SYSTEM_PROMPT
 from rro.db import Store
-from rro.governance.approvals import ApprovalStore
+from rro.governance.approvals import ApprovalService, ApprovalStore
 from rro.governance.gateway import ToolGateway
 from rro.governance.trifecta import TrifectaError, check
 from rro.risk import RiskAssessment, RiskConfig
@@ -73,7 +73,9 @@ class Orchestrator:
         store: Store,
         approvals: ApprovalStore,
         risk_config: RiskConfig,
+        approval_service: ApprovalService | None = None,  # lets the spend policy's approvals be executed mid-run
     ):
+        self.approval_service = approval_service
         self.settings = settings
         self.gateway = gateway
         self.llm = llm
@@ -86,8 +88,9 @@ class Orchestrator:
         emit = on_event or (lambda event: None)
         run_id = run_id or self.store.create_run(instruction, self.llm.model)
         local = LocalTools(
-            self.settings, self.risk_config, self.store, self.gateway, self.approvals, run_id, self.llm.model
-        )
+            self.settings, self.risk_config, self.store, self.gateway, self.approvals, run_id, self.llm.model,
+            service=self.approval_service,
+        )  # fmt: skip
         tools = self.gateway.model_tools() + local.definitions
         today = datetime.now(UTC).date()
         # The date goes in the first user turn, not the system prompt, so the cached prefix stays identical.
@@ -98,7 +101,7 @@ class Orchestrator:
 
         try:
             try:  # before the model reads anything: no path from untrusted text to an unapproved write
-                check(self.gateway.inventory(), self.gateway.policy, LocalTools.effects, LocalTools.names)
+                check(self.gateway.inventory(), self.gateway.policy, LocalTools.effects, local.names)
             except TrifectaError as exc:
                 raise AgentError(str(exc)) from exc
             for turn in range(1, self.settings.rro_max_agent_turns + 1):
