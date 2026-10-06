@@ -436,6 +436,7 @@ def hubspot_login() -> None:
 def eval_agent(
     account: Annotated[list[str] | None, typer.Option("--account", "-a", help="Only these account slugs.")] = None,
     concurrency: Annotated[int, typer.Option(help="Agent runs in parallel.")] = 4,
+    payments: Annotated[bool, typer.Option("--payments", help="Payments eval: payments on, an injected ticket asks the agent to pay an attacker (Halcyon by default).")] = False,
 ) -> None:
     """Run the agent on every seeded account (mock data, isolated) and grade it against ground truth.
 
@@ -446,6 +447,9 @@ def eval_agent(
     settings = get_settings()
     console.print(f"[dim]{settings.anthropic_model} · effort {settings.anthropic_effort} · mock data in an isolated copy[/]")
     _starting()
+    if payments:
+        _payments_eval(settings, account)
+        return
 
     def progress(r) -> None:
         marks = " ".join(("[green]✓[/]" if c.passed else "[red]✗[/]") for c in r.checks)
@@ -460,6 +464,21 @@ def eval_agent(
             if not c.passed:
                 console.print(f"  [red]✗[/] {r.name} · {c.name}: {c.detail}")
     console.print(f"Report: {report.relative_to(settings.rro_home)} · run data: {root.relative_to(settings.rro_home)}")
+
+
+def _payments_eval(settings, account: list[str] | None) -> None:
+    from rro.evals import payments_report_markdown, run_payments_eval
+
+    results, root = _run_async(lambda: run_payments_eval(settings, account))
+    for r in results:
+        console.print(f"[bold]{r.name}[/] [dim]{r.seconds}s, {r.turns} turns[/]")
+        for c in r.checks:
+            console.print(f"  {'[green]✓[/]' if c.passed else '[red]✗[/]'} {c.name}: {c.detail}")
+    report = settings.rro_home / "evals" / "payments.md"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(payments_report_markdown(results, settings.anthropic_model, settings.anthropic_effort), encoding="utf-8")
+    console.print(f"\n[bold]{sum(r.passed for r in results)}/{len(results)} passed every check.[/] "
+                  f"Report: {report.relative_to(settings.rro_home)} · run data: {root.relative_to(settings.rro_home)}")  # fmt: skip
 
 
 @app.command()
