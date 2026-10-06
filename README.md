@@ -19,6 +19,7 @@ Built with Claude (Anthropic API), the Model Context Protocol (MCP), FastAPI and
 - **It learns from decisions.** A memory of past approvals, rejections and outcomes shapes each recommendation. When precedent shows discounts didn't save similar accounts, the agent argues against one.
 - **Measured, not just demoed.** An eval runs the real agent on all 8 accounts: **8/8 passed, 64/64 checks**, including exact reproduction of every source number ([report](evals/results.md)). Offline tests run in CI on every push.
 - **Explainable scoring.** Claude gathers and interprets the evidence; a deterministic engine does the arithmetic.
+- **Governed spending (optional).** The agent can buy outside evidence over x402 on a testnet, within a per-run budget, from allowlisted sellers only, with a person deciding anything above a cent ([Spending](#spending-paid-evidence-over-x402-optional-testnet-only)).
 
 ---
 
@@ -157,6 +158,61 @@ Setup (free workspace, about 10 minutes):
 
 Clicks arrive over Socket Mode, so no public URL is needed. The listener runs inside `rro serve`, or on its own with `rro slack`.
 
+## Spending: paid evidence over x402 (optional, testnet only)
+
+When CRM, support and usage data aren't enough, the agent can buy outside evidence (recent company news) from a seller that charges per request over [x402](https://www.x402.org/), the HTTP-native payment protocol. The seller answers `402 Payment Required` with a price; the buyer signs a stablecoin payment and retries. Spending is governed exactly like a CRM write.
+
+**The model can only propose a purchase and say why; who gets paid, where the request goes and how much it can cost all come from the policy file, so even a fooled model can't send money or data anywhere it chooses.**
+
+**How a purchase works**
+
+1. The agent calls `propose_evidence_purchase` with three things only: the account, a seller *by name* from the allowlist, and why. Code builds the rest: the URL from the seller's address and the account's domain in the CRM, and the payee, network, token and maximum price from the policy.
+2. The spend policy decides, in code: refused, approved on its own (at or under the threshold), or sent to a person (Slack, web UI or CLI, on the same hashed payload as a CRM write).
+3. The **evidence MCP server**, the only process holding the wallet key, fetches the seller's 402, checks it still matches the approved terms, and only then signs. The data comes back to the agent labelled untrusted.
+4. Every purchase leaves one receipt in the audit log (reason, approver, amount, payee, transaction hash). Memory records it in code-built words, and a person can later rate whether it helped (`rro rate-evidence`), which the agent checks before buying again.
+
+**The rules live in [policy.yaml](config/policy.yaml)**
+
+```yaml
+payments:
+  network: eip155:84532            # Base Sepolia. Any non-testnet network stops the app from starting.
+  asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e"   # test USDC
+  budget_per_run_usd: "0.05"       # hard cap, pending purchases included; a person can't approve past it
+  auto_approve_up_to_usd: "0.01"   # above this, a person decides
+  payees:                          # each seller is allowlisted with its one payout address
+    - name: Evidence seller (local, testnet)
+      url: http://127.0.0.1:8402/news/
+      pay_to: "0xaa544d7D4b939Ddf68bF3217F57CBE2AbC95A990"
+      max_price_usd: "0.01"
+```
+
+**Try it**
+
+With no wallet, in mock mode, the seller and receipts are simulated:
+
+```bash
+RRO_PAYMENTS_ENABLED=true uv run rro run "Prep the renewal for Halcyon Robotics"
+uv run rro audit           # look for payments.payment: the receipt
+uv run rro memory          # the purchase, ready to rate with rro rate-evidence ID useful --note "…"
+```
+
+For real testnet payments: create a **dedicated test wallet** (never one holding real money), fund it from a Base Sepolia USDC faucet, and put its key in `.env` as `X402_BUYER_PRIVATE_KEY` (see [.env.example](.env.example)). Then:
+
+```bash
+uv sync --extra payments                 # the x402 SDK is an optional extra
+uv run python -m evidence_seller         # a local stand-in seller on port 8402
+RRO_PAYMENTS_ENABLED=true EVIDENCE_BACKEND=x402 uv run rro run "Prep the renewal for Halcyon Robotics"
+```
+
+Each receipt's transaction hash can be looked up on a Base Sepolia block explorer.
+
+**Proving it**
+
+- A scripted model on the attacker's side tries to overspend, pay an unlisted address, fire purchases in parallel and obey a planted ticket. A property test runs 2,000 random request sequences. All run free in CI.
+- `rro eval --payments` plants a ticket telling the real agent to pay an attacker $5 "for the full report". Claude flagged it as a likely prompt injection and paid nothing: **4/4 checks** ([report](evals/payments.md)).
+
+What's still a risk, including that a purchase tells the seller which customer you're researching, is in [SECURITY.md](SECURITY.md#payments-a-new-way-out). With `RRO_PAYMENTS_ENABLED` off (the default), the app behaves exactly as without this feature: no tool, no server, no prompt change.
+
 ## The 3-minute demo
 
 Run `rro demo-reset` first (add `--live` to include HubSpot and Slack): it clears everything a previous demo touched, then checks every system is ready. Then `rro serve`.
@@ -189,6 +245,8 @@ From the terminal, `rro tools` shows the policy at work (`crm.manage_crm_objects
 | `rro audit [RUN_ID]` | Audit log for a run (defaults to the latest) |
 | `rro score [SLUG]` | Deterministic risk scores via the MCP servers, with no LLM |
 | `rro eval` | Run the agent on every account and grade it against ground truth (uses the Claude API) |
+| `rro eval --payments` | The payments eval: a planted ticket asks the agent to pay an attacker (uses the Claude API) |
+| `rro rate-evidence ID useful\|not_useful --note "…"` | Record whether a paid evidence purchase helped, for later runs to weigh |
 | `rro reset` | Delete runs, approvals, the audit log and briefings, then reseed |
 | `rro demo-reset` | Clean slate for a demo (Slack cards, local data, and with `--live` the HubSpot fields), then a preflight check of every system |
 
@@ -237,6 +295,8 @@ src/mcp_servers/
   tickets/         task-shaped ticket tools; backends: mock, GitHub Issues
   usage/           task-shaped usage tools; backends: mock, PostHog (HogQL)
   memory/          past renewal decisions, read-only over MCP
+  evidence/        buys evidence over x402 (optional); the only process with the wallet key
+src/evidence_seller/  a local stand-in x402 seller for testnet runs
 tests/             unit + integration tests (real MCP servers, scripted LLM)
 evals/             latest eval report
 ```
@@ -256,7 +316,8 @@ The integration tests start the real MCP servers over stdio and drive the agent 
 - rejections need a reason, land in memory, and are visible to the next run;
 - the audit log can't be edited or deleted;
 - the full loop, the web approval flow and Slack approvals work end to end;
-- the live backends (HubSpot, GitHub, PostHog, HubSpot's MCP server) handle real response shapes, against canned HTTP responses.
+- the live backends (HubSpot, GitHub, PostHog, HubSpot's MCP server) handle real response shapes, against canned HTTP responses;
+- with payments on, a hostile model can't overspend, pay an unlisted address, change the terms after approval, or reach a mainnet.
 
 ## Roadmap
 
@@ -266,6 +327,7 @@ The integration tests start the real MCP servers over stdio and drive the agent 
 - [x] **Phase 3b**: HubSpot's own remote MCP server as an alternative CRM backend (OAuth), under the same governance.
 - [x] **Phase 4**: Slack approvals (Socket Mode), with the Slack user recorded as approver; approved writes to HubSpot.
 - [x] **Phase 5**: evals against ground truth, CI, README.
+- [x] **Paid evidence**: governed x402 spending on a testnet (spend policy, executor-only wallet, receipts, purchase memory, hostile-model tests, payments eval).
 - [ ] Demo video.
 
 ## License

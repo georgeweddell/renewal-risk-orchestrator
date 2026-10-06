@@ -57,7 +57,7 @@ def _runtime() -> Runtime:
 
 
 def _starting() -> None:
-    console.print("[dim]Starting MCP servers: crm, tickets, usage, memory…[/]")
+    console.print(f"[dim]Starting MCP servers: {', '.join(get_settings().systems)}…[/]")
 
 
 def _fail(message: str) -> None:

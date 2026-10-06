@@ -164,3 +164,15 @@ async def test_a_ticket_cannot_make_the_agent_pay_the_attacker(settings):
     audit = rt.store.audit_for_run(result.run_id)
     assert not any(ATTACKER.lower() in r["args_json"].lower() and r["decision"] == "allowed" and r["system"] != "local"
                    for r in audit)  # fmt: skip
+
+
+# --- 5. A wallet secret never reaches the audit log ------------------------------------------
+def test_wallet_secrets_are_redacted_from_the_audit_log(store):
+    from rro.db import AuditEntry
+
+    secrets = {"x402_buyer_private_key": "0x" + "ab" * 32, "mnemonic": "twelve words", "url": GOOD_URL}
+    store.add_audit(AuditEntry(actor="executor", system="evidence", tool="buy_evidence", scope="write",
+                               decision="allowed", args=secrets, run_id="r"))  # fmt: skip
+    (row,) = store.audit_for_run("r")
+    assert "ab" * 32 not in row["args_json"] and "twelve words" not in row["args_json"]
+    assert json.loads(row["args_json"])["url"] == GOOD_URL
