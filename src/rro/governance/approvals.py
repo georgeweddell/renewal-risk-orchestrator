@@ -23,11 +23,20 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 from mcp_servers.memory.store import Decision, MemoryStore
 from rro.db import AuditEntry, Store, utcnow
 from rro.governance.gateway import SEP, ToolGateway
+from rro.governance.spend import units_to_usd
 from rro.risk import RiskAssessment
+
+
+POLICY_APPROVER = "policy"  # decided_by for payments the spend policy approves on its own
+# Which approved or rejected actions go into decision memory for future runs to learn from.
+REMEMBERED_ACTIONS = {"crm_risk_update", "pricing_exception", "evidence_purchase"}
+# What a person can record about a purchase afterwards: did the evidence help?
+EVIDENCE_OUTCOMES = {"useful", "not_useful"}
 
 
 class ApprovalError(RuntimeError):
@@ -145,8 +154,20 @@ class ApprovalService:
 
     async def approve(self, approval_id: str, *, by: str, note: str | None = None) -> Approval:
         self._decide(approval_id, "approved", by=by, note=note)
-        approval = self.approvals.get(approval_id)
+        return await self._execute(approval_id, by, note)
 
+    async def approve_by_policy(self, approval_id: str, *, reason: str) -> Approval:
+        """Approve without a human, because the spend policy allows it (a payment under the threshold).
+
+        The record is the same as a human approval, with the same payload hash, so the
+        executor and the policy check are unchanged. Only `decided_by` and the audit
+        actor say "policy", so the log shows no human was involved.
+        """
+        self._decide(approval_id, "approved", by=POLICY_APPROVER, note=reason, actor=POLICY_APPROVER)
+        return await self._execute(approval_id, POLICY_APPROVER, reason)
+
+    async def _execute(self, approval_id: str, by: str, note: str | None) -> Approval:
+        approval = self.approvals.get(approval_id)
         outcome = await self.gateway.call(
             f"{approval.system}{SEP}{approval.tool}",
             approval.args,
@@ -156,19 +177,74 @@ class ApprovalService:
         )
         status = "failed" if outcome.is_error else "executed"
         self.approvals._update(approval.id, status=status, executed_at=utcnow(), result_text=outcome.text[:2000])
-        if status == "executed":
+        if approval.action_type == "evidence_purchase":
+            self._record_payment(approval, by, outcome.text, failed=outcome.is_error)
+        if status == "executed" and approval.action_type in REMEMBERED_ACTIONS:
             self._remember(approval, "approved", by, note, outcome="pending")
         return self.approvals.get(approval.id)
+
+    def _record_payment(self, approval: Approval, by: str, result_text: str, *, failed: bool) -> None:
+        """One audit row per purchase attempt, with everything an auditor asks about a payment.
+
+        Why it was bought, who approved it, the most it could cost, what was actually
+        paid, to whom, on which network, and the settlement's transaction hash (the
+        receipt anyone can look up on a block explorer). Only the executor's own
+        figures go in, never the seller's data.
+        """
+        paid: dict[str, Any] = {}
+        if not failed:
+            try:
+                paid = json.loads(result_text)
+            except json.JSONDecodeError:
+                paid = {}
+        paid_units = int(paid.get("paid_units") or 0)
+        self.store.add_audit(
+            AuditEntry(
+                run_id=approval.run_id, actor="executor", system="payments", tool="payment", scope="spend",
+                decision="allowed", reason=approval.rationale, is_error=failed, approval_id=approval.id,
+                args={
+                    "url": approval.args["url"],
+                    "pay_to": approval.args["pay_to"],
+                    "network": approval.args["network"],
+                    "approved_by": by,
+                    "max_usd": units_to_usd(approval.args["max_amount_units"]),
+                    "paid_usd": units_to_usd(paid_units),
+                    "paid_units": paid_units,
+                    "transaction": paid.get("transaction"),
+                    "simulated": paid.get("simulated"),
+                    "status": "failed, nothing paid" if failed else "paid",
+                },
+            )  # fmt: skip
+        )
+
+    def rate_evidence(self, decision_id: int, outcome: str, *, by: str, note: str) -> None:
+        """A person records whether a purchase helped. Their words, not the model's, are what memory keeps."""
+        decision = self.memory.get(decision_id)
+        if decision is None or decision.action_type != "evidence_purchase":
+            raise ApprovalError(f"Memory has no evidence purchase with ID {decision_id}")
+        if outcome not in EVIDENCE_OUTCOMES:
+            raise ApprovalError(f"Outcome must be one of: {', '.join(sorted(EVIDENCE_OUTCOMES))}")
+        if not note.strip():
+            raise ApprovalError("Say why. Future runs read the note when deciding whether to buy.")
+        self.memory.set_outcome(decision_id, outcome, note.strip())
+        self.store.add_audit(
+            AuditEntry(
+                run_id=decision.source.removeprefix("run:"), actor=f"human:{by}", system="memory",
+                tool="record_outcome", scope="write", decision="allowed", reason=note.strip(),
+                args={"decision_id": decision_id, "outcome": outcome},
+            )  # fmt: skip
+        )
 
     def reject(self, approval_id: str, *, by: str, note: str) -> Approval:
         if not note.strip():
             raise ApprovalError("A rejection needs a reason. It's what future runs learn from.")
         self._decide(approval_id, "rejected", by=by, note=note)
         approval = self.approvals.get(approval_id)
-        self._remember(approval, "rejected", by, note, outcome=None)
+        if approval.action_type in REMEMBERED_ACTIONS:
+            self._remember(approval, "rejected", by, note, outcome=None)
         return approval
 
-    def _decide(self, approval_id: str, status: str, *, by: str, note: str | None) -> None:
+    def _decide(self, approval_id: str, status: str, *, by: str, note: str | None, actor: str | None = None) -> None:
         approval = self.approvals.get(approval_id)
         if approval.status != "pending":
             raise ApprovalError(f"{approval_id} is already {approval.status}")
@@ -177,7 +253,7 @@ class ApprovalService:
             self.store.complete_if_decided(approval.run_id)
         self.store.add_audit(
             AuditEntry(
-                run_id=approval.run_id, actor=f"human:{by}", system="approvals",
+                run_id=approval.run_id, actor=actor or f"human:{by}", system="approvals",
                 tool="approve" if status == "approved" else "reject", scope="decision", decision="allowed",
                 reason=note, args={"approval_id": approval_id, "summary": approval.summary}, approval_id=approval_id,
             )  # fmt: skip
@@ -212,7 +288,8 @@ class ApprovalService:
         self.store.add_audit(
             AuditEntry(
                 run_id=approval.run_id, actor="system", system="memory", tool="record_decision", scope="write",
-                decision="allowed", reason=f"decision {decision_id}, after a human {status} {approval.id}",
+                decision="allowed",
+                reason=f"decision {decision_id}, after {'the spend policy' if by == POLICY_APPROVER else 'a human'} {status} {approval.id}",
                 args={"proposal": decision.proposal, "status": status, "approver": by, "note": note},
                 approval_id=approval.id,
             )  # fmt: skip
@@ -229,6 +306,10 @@ def memory_proposal(approval: Approval) -> str:
         )
     if approval.action_type == "pricing_exception":
         return f"{props.get('pricing_exception_pct')}% pricing exception on the renewal deal"
+    if approval.action_type == "evidence_purchase":
+        # Built from the approved terms: the seller's address and our validated domain, never the seller's data.
+        seller, _, domain = approval.args["url"].rpartition("/")
+        return f"Bought news on {domain} from {urlsplit(seller).netloc}, up to {units_to_usd(approval.args['max_amount_units'])} (testnet)"
     return approval.action_type
 
 

@@ -35,7 +35,7 @@ from mcp_types import CallToolResult, Implementation, TextContent
 
 from rro.db import AuditEntry, Store
 from rro.governance.policy import Decision, Policy
-from rro.settings import SYSTEMS, Settings
+from rro.settings import Settings
 
 SEP = "__"
 CLIENT_INFO = Implementation(name="renewal-risk-orchestrator", version="0.1.0")
@@ -90,7 +90,7 @@ def _server_entries(settings: Settings) -> dict[str, dict]:
     """The config/servers.yaml entry for each system's chosen backend."""
     raw = yaml.safe_load((settings.config_dir / "servers.yaml").read_text(encoding="utf-8"))["systems"]
     entries = {}
-    for system in SYSTEMS:
+    for system in settings.systems:
         backend = settings.backend_for(system)
         system_config = raw.get(system) or {}
         entry = system_config if "command" in system_config else system_config.get(backend)
@@ -151,7 +151,7 @@ class ToolGateway:
         launches = resolve_launch(self.settings)
         # Arguments a server accepts but the policy never lets through (see strip_arguments in servers.yaml).
         self._stripped = {s: set(e.get("strip_arguments") or []) for s, e in _server_entries(self.settings).items()}
-        needs_mock = any(self.settings.backend_for(s) == "mock" for s in launches)
+        needs_mock = any(self.settings.backend_for(s) == "mock" for s in launches if s != "evidence")  # no database
         for path, needed in ((self.settings.mock_db, needs_mock), (self.settings.memory_db, True)):
             if needed and not path.exists():
                 raise GatewayConfigError(f"{path.name} not found in {path.parent}. Run `rro seed` first.")

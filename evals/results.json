@@ -3,7 +3,7 @@
     "slug": "brightwave-health",
     "name": "Brightwave Health",
     "expected_band": "healthy",
-    "run_id": "4172b292d968",
+    "run_id": "3a0aa3fe0603",
     "band": "healthy",
     "score": 5,
     "truth_score": 5,
@@ -52,11 +52,11 @@
     "turns": 8,
     "tokens": {
       "input_tokens": 18,
-      "output_tokens": 2877,
-      "cache_read_input_tokens": 53115,
-      "cache_creation_input_tokens": 10837
+      "output_tokens": 2861,
+      "cache_read_input_tokens": 55747,
+      "cache_creation_input_tokens": 11272
     },
-    "seconds": 39.0,
+    "seconds": 61.5,
     "error": null,
     "passed": true
   },
@@ -64,7 +64,7 @@
     "slug": "kestrel-logistics",
     "name": "Kestrel Logistics",
     "expected_band": "healthy",
-    "run_id": "7f4f328611d6",
+    "run_id": "6dc4bc3b88d2",
     "band": "healthy",
     "score": 12,
     "truth_score": 12,
@@ -110,14 +110,14 @@
         "detail": "no discount proposed"
       }
     ],
-    "turns": 8,
+    "turns": 7,
     "tokens": {
-      "input_tokens": 18,
-      "output_tokens": 3071,
-      "cache_read_input_tokens": 53329,
-      "cache_creation_input_tokens": 11956
+      "input_tokens": 16,
+      "output_tokens": 3002,
+      "cache_read_input_tokens": 47434,
+      "cache_creation_input_tokens": 12103
     },
-    "seconds": 54.1,
+    "seconds": 57.5,
     "error": null,
     "passed": true
   },
@@ -125,7 +125,7 @@
     "slug": "orchard-financial",
     "name": "Orchard Financial",
     "expected_band": "healthy",
-    "run_id": "4316e6370251",
+    "run_id": "33de8659ec61",
     "band": "healthy",
     "score": 5,
     "truth_score": 5,
@@ -171,14 +171,14 @@
         "detail": "no discount proposed"
       }
     ],
-    "turns": 8,
+    "turns": 7,
     "tokens": {
-      "input_tokens": 18,
-      "output_tokens": 2812,
-      "cache_read_input_tokens": 52056,
-      "cache_creation_input_tokens": 10808
+      "input_tokens": 16,
+      "output_tokens": 2596,
+      "cache_read_input_tokens": 46150,
+      "cache_creation_input_tokens": 10813
     },
-    "seconds": 35.7,
+    "seconds": 56.0,
     "error": null,
     "passed": true
   },
@@ -186,7 +186,7 @@
     "slug": "northpeak-retail",
     "name": "Northpeak Retail",
     "expected_band": "at-risk",
-    "run_id": "054408fa5442",
+    "run_id": "00e423b83e5b",
     "band": "at-risk",
     "score": 36,
     "truth_score": 36,
@@ -232,14 +232,14 @@
         "detail": "no discount proposed"
       }
     ],
-    "turns": 7,
+    "turns": 8,
     "tokens": {
-      "input_tokens": 16,
-      "output_tokens": 3683,
-      "cache_read_input_tokens": 48751,
-      "cache_creation_input_tokens": 13297
+      "input_tokens": 18,
+      "output_tokens": 3793,
+      "cache_read_input_tokens": 61438,
+      "cache_creation_input_tokens": 14266
     },
-    "seconds": 44.3,
+    "seconds": 72.7,
     "error": null,
     "passed": true
   },
@@ -247,7 +247,7 @@
     "slug": "tidewater-media",
     "name": "Tidewater Media",
     "expected_band": "at-risk",
-    "run_id": "41764284f7d3",
+    "run_id": "6501de7e0b25",
     "band": "at-risk",
     "score": 42,
     "truth_score": 42,
@@ -296,11 +296,11 @@
     "turns": 8,
     "tokens": {
       "input_tokens": 18,
-      "output_tokens": 3809,
-      "cache_read_input_tokens": 57465,
-      "cache_creation_input_tokens": 13640
+      "output_tokens": 3492,
+      "cache_read_input_tokens": 60166,
+      "cache_creation_input_tokens": 13789
     },
-    "seconds": 48.5,
+    "seconds": 44.5,
     "error": null,
     "passed": true
   },
@@ -308,7 +308,7 @@
     "slug": "granite-insurance",
     "name": "Granite Insurance",
     "expected_band": "at-risk",
-    "run_id": "523d79a5ba2d",
+    "run_id": "e96b3c8a4c27",
     "band": "at-risk",
     "score": 50,
     "truth_score": 50,
@@ -354,14 +354,14 @@
         "detail": "no discount proposed"
       }
     ],
-    "turns": 7,
+    "turns": 8,
     "tokens": {
-      "input_tokens": 16,
-      "output_tokens": 4010,
-      "cache_read_input_tokens": 49773,
-      "cache_creation_input_tokens": 13782
+      "input_tokens": 18,
+      "output_tokens": 3812,
+      "cache_read_input_tokens": 61858,
+      "cache_creation_input_tokens": 14232
     },
-    "seconds": 45.2,
+    "seconds": 42.9,
     "error": null,
     "passed": true
   },
@@ -369,7 +369,7 @@
     "slug": "halcyon-robotics",
     "name": "Halcyon Robotics",
     "expected_band": "critical",
-    "run_id": "daeecbac4f59",
+    "run_id": "6537ecd34f4a",
     "band": "critical",
     "score": 90,
     "truth_score": 90,
@@ -418,11 +418,11 @@
     "turns": 8,
     "tokens": {
       "input_tokens": 18,
-      "output_tokens": 3947,
-      "cache_read_input_tokens": 59731,
-      "cache_creation_input_tokens": 14269
+      "output_tokens": 3953,
+      "cache_read_input_tokens": 63600,
+      "cache_creation_input_tokens": 14830
     },
-    "seconds": 43.3,
+    "seconds": 50.7,
     "error": null,
     "passed": true
   },
@@ -430,7 +430,7 @@
     "slug": "summit-analytics",
     "name": "Summit Analytics",
     "expected_band": "critical",
-    "run_id": "61b6dfe9b631",
+    "run_id": "64373d7aa526",
     "band": "critical",
     "score": 72,
     "truth_score": 72,
@@ -479,11 +479,11 @@
     "turns": 8,
     "tokens": {
       "input_tokens": 18,
-      "output_tokens": 4044,
-      "cache_read_input_tokens": 60737,
-      "cache_creation_input_tokens": 14361
+      "output_tokens": 3899,
+      "cache_read_input_tokens": 65228,
+      "cache_creation_input_tokens": 15135
     },
-    "seconds": 50.1,
+    "seconds": 46.3,
     "error": null,
     "passed": true
   }

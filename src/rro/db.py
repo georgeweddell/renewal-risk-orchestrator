@@ -187,7 +187,7 @@ class Store:
         return rows[::-1]
 
 
-SENSITIVE_KEYS = ("token", "secret", "password", "api_key", "authorization")
+SENSITIVE_KEYS = ("token", "secret", "password", "api_key", "authorization", "private_key", "mnemonic")
 
 
 def _redact(value: Any) -> Any:

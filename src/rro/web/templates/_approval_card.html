@@ -1,6 +1,6 @@
 <article class="approval st-{{ a.status }} {{ 'stock-salmon' if a.action_type == 'pricing_exception' else 'stock-buff' }}">
   <header class="approval-head">
-    <h3 class="approval-type">{{ 'Pricing exception' if a.action_type == 'pricing_exception' else 'CRM risk update' }}</h3>
+    <h3 class="approval-type">{{ {'pricing_exception': 'Pricing exception', 'evidence_purchase': 'Evidence purchase'}.get(a.action_type, 'CRM risk update') }}</h3>
     <span class="tag s-{{ a.status }}">{{ a.status }}</span>
   </header>
   <div class="approval-body">
@@ -35,7 +35,7 @@
       {{ a.status | capitalize }} by <strong>{{ a.decided_by }}</strong>{% if a.decided_at %} · <span class="mono">{{ a.decided_at[:16].replace('T', ' ') }} UTC</span>{% endif %}
       {% if a.decision_note %}<span class="note">“{{ a.decision_note }}”</span>{% endif %}
     </p>
-    {% if a.status == 'executed' %}<p class="executed-note">Written to the CRM by the executor.</p>{% endif %}
+    {% if a.status == 'executed' %}<p class="executed-note">{{ 'Bought by the executor (testnet).' if a.action_type == 'evidence_purchase' else 'Written to the CRM by the executor.' }}</p>{% endif %}
     {% if a.status == 'failed' %}<p class="error">{{ a.result_text }}</p>{% endif %}
   {% endif %}
   </div>

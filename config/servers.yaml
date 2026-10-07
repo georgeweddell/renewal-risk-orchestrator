@@ -62,6 +62,20 @@ systems:
         POSTHOG_PROJECT_ID: "${POSTHOG_PROJECT_ID}"
         POSTHOG_PERSONAL_API_KEY: "${POSTHOG_PERSONAL_API_KEY}"
 
+  evidence:
+    # Started only when RRO_PAYMENTS_ENABLED=true. Backend: EVIDENCE_BACKEND, or mock/x402 by RRO_MODE.
+    description: "Paid third-party evidence over x402 (testnet only)"
+    mock:
+      command: "{python}"
+      args: ["-m", "mcp_servers.evidence"]
+      env: {EVIDENCE_BACKEND: mock}  # a simulated seller: no network, no wallet
+    x402:
+      command: "{python}"
+      args: ["-m", "mcp_servers.evidence"]
+      env:
+        EVIDENCE_BACKEND: x402
+        X402_BUYER_PRIVATE_KEY: "${X402_BUYER_PRIVATE_KEY}"
+
   memory:
     description: "Past renewal decisions and outcomes (this app's own store)"
     command: "{python}"

@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS decisions (
     account_slug  TEXT NOT NULL,
     account_name  TEXT NOT NULL,
     decided_on    TEXT NOT NULL,        -- ISO date
-    action_type   TEXT NOT NULL,        -- crm_risk_update | pricing_exception
+    action_type   TEXT NOT NULL,        -- crm_risk_update | pricing_exception | evidence_purchase
     risk_band     TEXT NOT NULL,
     risk_score    INTEGER NOT NULL,
     drivers       TEXT NOT NULL,        -- JSON array of driver codes
@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS decisions (
     status        TEXT NOT NULL,        -- approved | rejected
     approver      TEXT NOT NULL,
     note          TEXT,                 -- the approver's reasoning
-    outcome       TEXT,                 -- renewed | churned | downgraded | pending | NULL
+    outcome       TEXT,                 -- renewed | churned | downgraded | pending | NULL; purchases: useful | not_useful
     outcome_note  TEXT,
     source        TEXT NOT NULL         -- seed | run:<run_id>
 );
@@ -96,6 +96,15 @@ class MemoryStore:
                 tuple(values.values()),
             )
             return cur.lastrowid
+
+    def get(self, decision_id: int) -> Decision | None:
+        with self._session() as conn:
+            row = conn.execute("SELECT * FROM decisions WHERE id=?", (decision_id,)).fetchone()
+        return _decision(row) if row else None
+
+    def set_outcome(self, decision_id: int, outcome: str, note: str | None) -> None:
+        with self._session() as conn:
+            conn.execute("UPDATE decisions SET outcome=?, outcome_note=? WHERE id=?", (outcome, note, decision_id))
 
     def all(self) -> list[Decision]:
         with self._session() as conn:

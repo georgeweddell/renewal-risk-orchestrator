@@ -57,7 +57,7 @@ def _runtime() -> Runtime:
 
 
 def _starting() -> None:
-    console.print("[dim]Starting MCP servers: crm, tickets, usage, memory…[/]")
+    console.print(f"[dim]Starting MCP servers: {', '.join(get_settings().systems)}…[/]")
 
 
 def _fail(message: str) -> None:
@@ -170,7 +170,7 @@ def memory(slug: Annotated[str | None, typer.Argument(help="Only this account.")
     """Show the decision memory: past proposals, human decisions and outcomes."""
     rt = _runtime()
     decisions = rt.memory.for_account(slug) if slug else rt.memory.all()
-    table = Table("Date", "Account", "Action", "Risk", "Proposal", "Decision", "Outcome")
+    table = Table("ID", "Date", "Account", "Action", "Risk", "Proposal", "Decision", "Outcome")
     for d in decisions:
         decision = f"{_status(d.status)} [dim]{d.approver}[/]"
         if d.note:
@@ -178,8 +178,24 @@ def memory(slug: Annotated[str | None, typer.Argument(help="Only this account.")
         outcome = d.outcome or "-"
         if d.outcome_note:
             outcome += f"\n[dim]{d.outcome_note}[/]"
-        table.add_row(d.decided_on, d.account_name, d.action_type, f"{_band(d.risk_band)} {d.risk_score}", d.proposal, decision, outcome)
+        table.add_row(str(d.id), d.decided_on, d.account_name, d.action_type, f"{_band(d.risk_band)} {d.risk_score}", d.proposal, decision, outcome)
     console.print(table)
+
+
+@app.command("rate-evidence")
+def rate_evidence(
+    decision_id: Annotated[int, typer.Argument(help="The purchase's ID in `rro memory`.")],
+    outcome: Annotated[str, typer.Argument(help="useful or not_useful")],
+    note: Annotated[str, typer.Option(help="Why. Required: future runs read it before buying.")],
+    by: Annotated[str | None, typer.Option(help="Who is rating. Defaults to RRO_APPROVER_NAME.")] = None,
+) -> None:
+    """Record whether a paid evidence purchase helped, so later runs can decide whether to buy again."""
+    rt = _runtime()
+    try:
+        rt.approval_service().rate_evidence(decision_id, outcome, by=by or rt.settings.rro_approver_name, note=note)
+    except ApprovalError as exc:
+        _fail(str(exc))
+    console.print(f"[green]Recorded[/] purchase {decision_id} as {outcome}.")
 
 
 # --- governance ------------------------------------------------------------------
@@ -420,6 +436,7 @@ def hubspot_login() -> None:
 def eval_agent(
     account: Annotated[list[str] | None, typer.Option("--account", "-a", help="Only these account slugs.")] = None,
     concurrency: Annotated[int, typer.Option(help="Agent runs in parallel.")] = 4,
+    payments: Annotated[bool, typer.Option("--payments", help="Payments eval: payments on, an injected ticket asks the agent to pay an attacker (Halcyon by default).")] = False,
 ) -> None:
     """Run the agent on every seeded account (mock data, isolated) and grade it against ground truth.
 
@@ -430,6 +447,9 @@ def eval_agent(
     settings = get_settings()
     console.print(f"[dim]{settings.anthropic_model} · effort {settings.anthropic_effort} · mock data in an isolated copy[/]")
     _starting()
+    if payments:
+        _payments_eval(settings, account)
+        return
 
     def progress(r) -> None:
         marks = " ".join(("[green]✓[/]" if c.passed else "[red]✗[/]") for c in r.checks)
@@ -444,6 +464,21 @@ def eval_agent(
             if not c.passed:
                 console.print(f"  [red]✗[/] {r.name} · {c.name}: {c.detail}")
     console.print(f"Report: {report.relative_to(settings.rro_home)} · run data: {root.relative_to(settings.rro_home)}")
+
+
+def _payments_eval(settings, account: list[str] | None) -> None:
+    from rro.evals import payments_report_markdown, run_payments_eval
+
+    results, root = _run_async(lambda: run_payments_eval(settings, account))
+    for r in results:
+        console.print(f"[bold]{r.name}[/] [dim]{r.seconds}s, {r.turns} turns[/]")
+        for c in r.checks:
+            console.print(f"  {'[green]✓[/]' if c.passed else '[red]✗[/]'} {c.name}: {c.detail}")
+    report = settings.rro_home / "evals" / "payments.md"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(payments_report_markdown(results, settings.anthropic_model, settings.anthropic_effort), encoding="utf-8")
+    console.print(f"\n[bold]{sum(r.passed for r in results)}/{len(results)} passed every check.[/] "
+                  f"Report: {report.relative_to(settings.rro_home)} · run data: {root.relative_to(settings.rro_home)}")  # fmt: skip
 
 
 @app.command()

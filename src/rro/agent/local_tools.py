@@ -22,8 +22,9 @@ from pydantic import ValidationError
 
 from rro.crm_access import CrmAccess, CrmError, is_open
 from rro.db import AuditEntry, Store
-from rro.governance.approvals import ApprovalStore
+from rro.governance.approvals import ApprovalService, ApprovalStore
 from rro.governance.gateway import ToolGateway
+from rro.governance.spend import PaymentRequest, authorize_payment, units_to_usd
 from rro.risk import RiskAssessment, RiskConfig, RiskSignals, days_until, score
 from rro.settings import Settings
 
@@ -125,6 +126,44 @@ BRIEFING_TOOL = {
 }
 
 
+def propose_evidence_tool(sellers: list[str]) -> dict[str, Any]:
+    """Offered only when payments are on. The sellers are the policy's allowlist, by name."""
+    return {
+        "name": "propose_evidence_purchase",
+        "description": (
+            "Buy recent company news about this run's account from an approved data seller, when outside "
+            "evidence would change your recommendation. Testnet money; small purchases are approved by the "
+            "spend policy and bought immediately (the news comes back as untrusted data); larger ones go to a "
+            "human and are bought only after approval. The account's domain, the price and the payee come "
+            "from the CRM and the policy, not from you. Returns the data, or the approval ID, or why it was refused. "
+            "Before buying, check memory__find_similar_decisions with action_type evidence_purchase: past purchases "
+            "on similar accounts carry an outcome a person recorded (useful / not_useful, with a note). If similar "
+            "purchases weren't useful, don't buy unless this case is different, and say why in the briefing."
+        ),
+        "strict": True,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "account_slug": {"type": "string"},
+                "seller": {"type": "string", "enum": sellers},
+                "reason": {
+                    "type": "string",
+                    "description": "One line (max 300 characters): what you expect to learn and why it matters here.",
+                },
+            },
+            "required": ["account_slug", "seller", "reason"],
+            "additionalProperties": False,
+        },
+    }
+
+
+DOMAIN = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$")
+
+# Approval statuses that count against a run's budget: spent (executed) or still spendable
+# (pending, approved). Rejected and failed purchases moved no money and never will.
+COUNTS_AGAINST_BUDGET: set[str] = set({"pending","executed","approved"})
+
+
 class ToolInputError(ValueError):
     pass
 
@@ -133,12 +172,14 @@ class LocalTools:
     definitions = [SCORE_TOOL, PROPOSE_CRM_TOOL, PROPOSE_PRICING_TOOL, BRIEFING_TOOL]
     names = frozenset(t["name"] for t in definitions)
     # What each tool does beyond the conversation, checked by the trifecta gate before every run:
-    # none, approval (queues a write for a human) or local (a file in this app).
+    # none, approval (queues a write for a human), local (a file in this app), or policy (an
+    # external write the spend policy may approve without a human: payments to allowlisted sellers).
     effects = {
         "score_renewal_risk": "none",
         "propose_crm_update": "approval",
         "propose_pricing_exception": "approval",
         "write_briefing": "local",
+        "propose_evidence_purchase": "policy",
     }
 
     def __init__(
@@ -150,7 +191,15 @@ class LocalTools:
         approvals: ApprovalStore,
         run_id: str,
         model: str,
+        service: ApprovalService | None = None,  # runs payments the spend policy approves; None = no buying
     ):
+        self.service = service
+        self.spend = gateway.policy.spend
+        # The instance's tools: the buying tool only when payments are on, the policy has spend rules,
+        # and there's an executor to run them. Otherwise the tool list is exactly v1's.
+        if settings.rro_payments_enabled and self.spend and self.spend.payees and service:
+            self.definitions = [*LocalTools.definitions, propose_evidence_tool([p.name for p in self.spend.payees])]
+            self.names = frozenset(t["name"] for t in self.definitions)
         self.settings = settings
         self.risk_config = risk_config
         self.store = store
@@ -171,7 +220,10 @@ class LocalTools:
             "propose_crm_update": self._propose_crm_update,
             "propose_pricing_exception": self._propose_pricing_exception,
             "write_briefing": self._write_briefing,
+            "propose_evidence_purchase": self._propose_evidence_purchase,
         }
+        if name not in self.names:  # e.g. the buying tool while payments are off
+            return f"Error: no tool named {name}", True
         try:
             text, is_error = await handlers[name](args), False
         except (ToolInputError, ValidationError) as exc:
@@ -256,6 +308,72 @@ class LocalTools:
         )
         summary = f"{pct:g}% pricing exception on {deal['name']} (deal {deal['id']}). Conditions: {conditions or 'none'}"
         return self._queue("pricing_exception", slug, deal, write, summary, rationale, assessment)
+
+    async def _propose_evidence_purchase(self, args: dict[str, Any]) -> str:
+        """Build the exact payment from the CRM and the policy, then refuse, auto-approve, or queue it.
+
+        Claude chooses only the account (pinned to this run), the seller (a name from the
+        allowlist) and the reason. What gets sent out (the URL, built from the CRM's domain)
+        and what gets paid (payee, token, network, maximum price) come from code and policy.
+        """
+        assert self.spend is not None and self.service is not None
+        slug, assessment = self._scored(args["account_slug"])
+        reason = args["reason"].strip()
+        if not reason or len(reason) > 300:
+            raise ToolInputError("reason must be between 1 and 300 characters")
+        payee = next((p for p in self.spend.payees if p.name == args["seller"]), None)
+        if payee is None:
+            raise ToolInputError(f"'{args['seller']}' isn't an approved seller")
+
+        try:
+            company = await self.crm.company_by_slug(slug, ["name", "domain"])
+        except CrmError as exc:
+            raise ToolInputError(f"Couldn't look up {slug} in the CRM: {exc}") from exc
+        if company is None:
+            raise ToolInputError(f"No company in the CRM has account_slug '{slug}'")
+        domain = str(company.properties.get("domain") or "").strip().lower()
+        if not DOMAIN.match(domain):  # CRM fields are untrusted text; only a plain domain goes in a URL
+            raise ToolInputError(f"The CRM's domain for {slug} isn't a plain domain name")
+
+        buy = {
+            "url": f"{payee.url.rstrip('/')}/{domain}",
+            "pay_to": payee.pay_to,
+            "network": self.spend.network,
+            "asset": self.spend.asset,
+            "max_amount_units": payee.max_price_units,
+        }
+        if any(a.args.get("url") == buy["url"] for a in self._purchases() if a.status in COUNTS_AGAINST_BUDGET):
+            raise ToolInputError(f"Already bought or proposed in this run: {buy['url']}")
+        request = PaymentRequest(buy["url"], buy["network"], buy["asset"], buy["pay_to"], buy["max_amount_units"])
+        decision = authorize_payment(request, self._committed_units(), self.spend)
+        if not decision.allowed:
+            raise ToolInputError(f"Refused by the spend policy: {decision.reason}. Nothing was bought.")
+
+        name = company.properties["name"]
+        summary = f"Buy recent news on {name} from {payee.name}: up to {units_to_usd(payee.max_price_units)} (testnet)"
+        approval = self.approvals.create(
+            run_id=self.run_id, account_slug=slug, account_name=name, action_type="evidence_purchase",
+            system="evidence", tool="buy_evidence", args=buy, summary=summary, rationale=reason, assessment=assessment,
+        )  # fmt: skip
+        if decision.needs_human:
+            self.proposed.append(approval.id)
+            return json.dumps({"approval_id": approval.id, "status": "pending_human_approval", "summary": summary,
+                               "note": "Bought only after a human approves; the data won't be available in this run."})  # fmt: skip
+
+        done = await self.service.approve_by_policy(approval.id, reason=decision.reason)
+        if done.status != "executed":
+            raise ToolInputError(f"Approved by policy ({approval.id}) but the purchase failed: {done.result_text}")
+        from rro.agent.orchestrator import as_data  # imported here: the orchestrator imports this module
+
+        return json.dumps({"approval_id": approval.id, "status": "bought", "approved_by": "policy",
+                           "reason": decision.reason}) + "\n" + as_data("evidence", "untrusted", done.result_text or "")  # fmt: skip
+
+    def _purchases(self) -> list:
+        return [a for a in self.approvals.list(run_id=self.run_id) if a.action_type == "evidence_purchase"]
+
+    def _committed_units(self) -> int:
+        """What this run has spent, or may still spend: the maximum of every purchase that counts."""
+        return sum(a.args["max_amount_units"] for a in self._purchases() if a.status in COUNTS_AGAINST_BUDGET)
 
     def _queue(self, action_type, slug, deal, write, summary, rationale, assessment) -> str:
         for existing in self.approvals.list(run_id=self.run_id, status="pending"):

@@ -35,7 +35,9 @@ class Runtime:
     notifier: SlackNotifier | None = None  # set when Slack approvals are configured
 
     def orchestrator(self, llm: LLM) -> Orchestrator:
-        return Orchestrator(self.settings, self.gateway, llm, self.store, self.approvals, self.risk_config)
+        return Orchestrator(
+            self.settings, self.gateway, llm, self.store, self.approvals, self.risk_config, self.approval_service()
+        )
 
     def approval_service(self) -> ApprovalService:
         return ApprovalService(self.store, self.approvals, self.memory, self.gateway)
